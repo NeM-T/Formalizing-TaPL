@@ -21,7 +21,7 @@ let rec isnumericval = function
 
 (** val isval : term -> bool **)
 
-let rec isval t = match t with
+let isval t = match t with
 | Tru -> True
 | Fls -> True
 | _ -> isnumericval t
