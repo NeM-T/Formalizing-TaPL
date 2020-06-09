@@ -3,37 +3,40 @@ open Arith
 let write t =
   let parse = Parser.toplevel Lexer.main t in
   let result = Print.manyeval parse in
-  let ()     = if (Eval.isval result) = False then
-    print_string "NotValue : " else
-    print_string "Eval : " in
-  print_string ((Print.eval_string parse) ^ " -> "); print_string (Print.eval_string result); print_newline()
+  let ()     =
+    if (Eval.isval result) = False then
+      print_string "NotValue : " else
+      print_string "Eval : " in
+    print_string ((Print.eval_string parse) ^ " -> "); print_string (Print.eval_string result); print_newline()
 
 
 
 let rec get () =
-  let getin () =
+  let getin =
   let lexbuf = Lexing.from_channel stdin in
     write lexbuf; get ()
   in
-  try getin () 
+  try getin 
   with
-    Lexer.Error m  -> print_string m; print_newline(); get() 
+      Lexer.Error m  -> print_string m; print_newline(); get() 
     | Parser.Error -> print_string "Parser Error"; print_newline(); get()
 
 
 let readfile () = 
       let file = Sys.argv.(1) in
       let oc   = open_in file in
-      let rec ww () =
-        let line = input_line oc in
-        let lexbuf = Lexing.from_string line in 
-        write lexbuf; ww ()
-      in
-      try ww ()
-      with
-        End_of_file     -> close_in oc
-      | Lexer.Error mes -> print_string mes; print_newline()
-      | Parser.Error    -> print_string "Parser Error"; print_newline()
+      let rec loop () = 
+        let rec ww () =
+            let line = input_line oc in
+            let lexbuf = Lexing.from_string line in 
+            write lexbuf; ww ()
+          in
+          try ww ()
+          with
+            End_of_file     -> close_in oc
+          | Lexer.Error mes -> print_string mes; print_newline(); loop ()
+          | Parser.Error    -> print_string "Parser Error"; print_newline(); loop () in
+      loop ()
 
 let () =
   match (Array.length Sys.argv) with
