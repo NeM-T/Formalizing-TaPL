@@ -10,13 +10,12 @@ let write t =
     print_string ((Print.eval_string parse) ^ " -> "); print_string (Print.eval_string result); print_newline()
 
 
-
 let rec get () =
-  let getin =
+  let getin () =
   let lexbuf = Lexing.from_channel stdin in
     write lexbuf; get ()
   in
-  try getin 
+  try getin ()
   with
       Lexer.Error m  -> print_string m; print_newline(); get() 
     | Parser.Error -> print_string "Parser Error"; print_newline(); get()
