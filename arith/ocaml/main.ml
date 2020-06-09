@@ -17,8 +17,8 @@ let rec get () =
   in
   try getin () 
   with
-    Lexer.Error m -> print_string m; print_newline(); get() 
-    | _  -> print_string "Parser Error"; print_newline(); get()
+    Lexer.Error m  -> print_string m; print_newline(); get() 
+    | Parser.Error -> print_string "Parser Error"; print_newline(); get()
 
 
 let readfile () = 
@@ -33,11 +33,10 @@ let readfile () =
       with
         End_of_file     -> close_in oc
       | Lexer.Error mes -> print_string mes; print_newline()
-      | _  -> print_string "Parser Error"; print_newline()
+      | Parser.Error    -> print_string "Parser Error"; print_newline()
 
 let () =
   match (Array.length Sys.argv) with
     1 -> get ()
   | _ -> readfile ()
-
 

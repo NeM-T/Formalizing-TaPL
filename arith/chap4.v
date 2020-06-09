@@ -18,7 +18,7 @@ Fixpoint isnumericval (t: term): bool :=
   | _ => false
   end.
 
-Fixpoint isval (t: term) : bool :=
+Definition isval (t: term) : bool :=
   match t with
   | tru => true
   | fls => true
@@ -94,7 +94,7 @@ Proof.
 Qed.
 
 
-Extraction "ocaml/eval.ml" eval1.
+Extraction "ocaml/src/eval.ml" eval1.
 
 Inductive NatValue: term -> Prop :=
 | nv_O : NatValue O
