@@ -8,7 +8,7 @@ let rec eval_string t =
   | O   -> "0"
   | Succ t1 -> "S (" ^ (eval_string t1) ^ ")"
   | Pred t1 -> "Pred " ^ (eval_string t1)
-  | Iszero t1 -> "If0 " ^ (eval_string t1)
+  | Iszero t1 -> "Is0 " ^ (eval_string t1)
 
 
 let rec manyeval t1 =

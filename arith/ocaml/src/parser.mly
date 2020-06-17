@@ -6,7 +6,7 @@
 %token LPAREN RPAREN SEMI
 %token PRED
 %token SUCC
-%token IF THEN ELSE IFO ZERO TRUE FALSE 
+%token IF THEN ELSE ISO ZERO TRUE FALSE 
 
 %start toplevel
 %type <Eval.term> toplevel
@@ -34,7 +34,7 @@ VExpr :
   | LPAREN e=Expr RPAREN {e}
 
 If0Expr :
-  IFO e=Expr {Iszero e}
+  ISO e=Expr {Iszero e}
   | e=IfExpr  {e}
 
 IfExpr :

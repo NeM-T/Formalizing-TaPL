@@ -12,6 +12,7 @@ rule main = parse
 | "S"   { Parser.SUCC }
 | "Pred"{ Parser.PRED }
 | "if"  { Parser.IF }
+| "is0" {Parser.ISO}
 | "else"{ Parser.ELSE }
 | "then"{ Parser.THEN }
 |"tru"  { Parser.TRUE }
