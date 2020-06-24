@@ -8,8 +8,6 @@ Inductive multi {X : Type} (R : relation X) : relation X :=
                     multi R y z ->
                     multi R x z.
 
-
-
 Module ArithC.
 
 Inductive t : Type :=
@@ -1056,7 +1054,6 @@ Proof.
     inversion H4; subst; try solve_by_inverts 2.
 Qed.
 
-
-
 End ArithNatBad.
+
 
