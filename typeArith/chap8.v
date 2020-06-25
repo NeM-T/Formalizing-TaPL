@@ -1,3 +1,7 @@
+Require Coq.extraction.Extraction.
+Extraction Language OCaml.
+
+
 Inductive term : Type :=
 | Tru
 | Fls
@@ -47,8 +51,98 @@ Inductive hastype : term -> T -> Prop :=
     forall (t1: term),
       hastype t1 Nat ->
       hastype (iszero t1) Bool.
-
 Notation "t '\in' T" := (hastype t T)(at level 40).
+
+
+Inductive optionT : Type :=
+| SomeT (T1: T)
+| NoneT.
+
+Definition eqT (T1 T2: T) : bool :=
+  match (T1, T2) with
+  | (Bool, Bool) => true
+  | (Nat,  Nat)  => true
+  | _ => false
+  end.
+
+Fixpoint has_type (t: term) : optionT :=
+  match t with
+  | Tru => SomeT Bool
+  | Fls => SomeT Bool
+  | If t1 t2 t3 =>
+    match has_type t1 with
+    | SomeT Bool =>
+      match has_type t2 with
+      | SomeT T1 =>
+        match has_type t3 with
+        | SomeT T2 => if (eqT T1 T2) then SomeT T1 else NoneT
+        | _ => NoneT
+        end
+      | _ => NoneT
+      end
+    | _ => NoneT
+    end
+  | O => SomeT Nat
+  | Succ t1 =>
+    match has_type t1 with
+    | SomeT Nat => SomeT Nat
+    | _ => NoneT
+    end
+  | Pred t1 =>
+    match has_type t1 with
+    | SomeT Nat => SomeT Nat
+    | _ => NoneT
+    end
+  | iszero t1 =>
+    match has_type t1 with
+    | SomeT Nat => SomeT Bool
+    | _ => NoneT
+    end
+  end.
+
+Lemma eqT2Prop : forall T1 T2,
+    eqT T1 T2 = true <-> T1 = T2.
+Proof.
+  intros. split;
+  destruct T1; destruct T2; intros; auto; discriminate.
+Qed.
+
+Lemma has_typeCorrect : forall t T1,
+    t \in T1 <-> has_type t = SomeT T1.
+Proof.
+  split.
+  -
+    generalize dependent T1. induction t; intros; inversion H; subst; auto; simpl.
+    +
+      apply IHt1 in H3. apply IHt2 in H5. apply IHt3 in H6.
+      rewrite H3. rewrite H5. rewrite H6. destruct T1; auto.
+    +
+      apply IHt in H1. rewrite H1; auto.
+    +
+      apply IHt in H1. rewrite H1; auto.
+    +
+      apply IHt in H1. rewrite H1; auto.
+  -
+    generalize dependent T1. induction t; intros; inversion H; subst; auto.
+    +
+      apply T_True.
+    +
+      apply T_False.
+    +
+      destruct (has_type t1); try (discriminate). destruct (T0); try discriminate.
+      destruct (has_type t2) eqn:Ht2; try (discriminate). destruct (has_type t3) eqn:Ht3; try discriminate.
+      destruct (eqT T2 T3) eqn:eq; try discriminate. apply T_If.
+      apply IHt1; auto. apply IHt2; auto. apply eqT2Prop in eq. apply IHt3; rewrite <- eq; auto.
+    +
+      apply T_Zero.
+    +
+      destruct (has_type t). destruct T0. inversion H1. inversion H1. apply T_Succ. apply IHt; auto. inversion H1.
+    +
+      destruct (has_type t). destruct T0. inversion H1. inversion H1. apply T_Pred. apply IHt; auto. inversion H1.
+    +
+      destruct (has_type t). destruct T0. inversion H1. inversion H1. apply T_IsZero. apply IHt; auto. inversion H1.
+Qed.
+
 
 Lemma l8_2_2_1 : forall R,
     Tru \in R -> R = Bool.
@@ -96,6 +190,122 @@ Inductive step: term -> term -> Prop :=
 
   where " t '-->' t' " := (step t t').
 
+Inductive optiont : Type :=
+| Some (T: term)
+| None.
+
+Fixpoint eval (t: term) : optiont :=
+  match t with
+  | If t1 t2 t3 =>
+    if (Value t1) then
+      match t1 with
+      | Tru => Some t2
+      | Fls => Some t3
+      | _ => None
+      end else
+      match (eval t1) with
+      | Some t1' => Some (If t1' t2 t3)
+      | _ => None
+      end
+  | Succ t1 =>
+    if NatValue t1 then
+      None else
+      match (eval t1) with
+      | Some t1' => Some (Succ t1')
+      | _ => None
+      end
+  | Pred t1 =>
+    if (NatValue t1) then
+      match t1 with
+      | O => Some O
+      | Succ nv1 => Some nv1
+      | _ => None
+      end else
+      match (eval t1) with
+      | Some t1' => Some (Pred t1')
+      | _ => None
+      end
+  | iszero t1 =>
+    if (NatValue t1) then
+      match t1 with
+      | O => Some Tru
+      | Succ _ => Some Fls
+      | _ => None
+      end else
+      match (eval t1) with
+      | Some t1' => Some (iszero t1')
+      | _ => None
+      end
+  | _ => None
+  end.
+
+Ltac solve_by_inverts n :=
+  match goal with | H : ?T |- _ =>
+  match type of T with Prop =>
+    solve [
+      inversion H;
+      match n with S (S (?n')) => subst; solve_by_inverts (S n') end ]
+  end end.
+
+Ltac solve_by_invert :=
+  solve_by_inverts 1.
+
+
+Lemma Valuestop : forall t1,
+    Value t1 = true -> not (exists t1', t1 --> t1').
+Proof.
+  induction t1; intros; intro H1; try solve_by_inverts 2.
+  inversion H.
+  assert (Value t1 = true). destruct t1; try solve_by_invert; auto.
+  apply IHt1 in H0. inversion H1. inversion H3; subst. induction H0. exists t1'; auto.
+Qed.
+
+
+Theorem step_eval1_correct : forall t1 t1',
+    eval t1 = Some t1' <-> t1 --> t1'.
+Proof.
+  split.
+  -
+    intros. generalize dependent t1'.
+    induction t1; intros; try solve_by_invert.
+    +
+      inversion H. destruct (Value t1_1). destruct (t1_1); try solve_by_invert.
+      inversion H. apply E_IfTrue. inversion H. apply E_IfFalse.
+      destruct (eval t1_1); try solve_by_invert. inversion H1. apply E_If. apply IHt1_1; auto.
+    +
+      inversion H. destruct (NatValue t1). inversion H1. destruct (eval t1). inversion H1. apply E_Succ. apply IHt1; auto. inversion H1.
+    +
+      inversion H. destruct (NatValue t1) eqn:nv. destruct (t1); try (solve_by_invert). inversion H1. apply E_PredZero.
+      inversion H1. apply E_PredSucc. inversion nv. rewrite H2; auto.
+      destruct (eval t1). inversion H1. apply E_Pred. apply IHt1; auto.
+      inversion H1.
+    +
+      inversion H. destruct (NatValue t1) eqn:nv. destruct t1; try solve_by_invert.
+      inversion H1. apply E_IsZeroZero. inversion H1. apply E_IsZeroSucc. inversion nv. auto.
+      destruct (eval t1). inversion H1. apply E_IsZero. apply IHt1; auto. inversion H1.
+
+  -
+    generalize dependent t1'; induction t1; intros; try (solve_by_invert).
+    +
+      inversion H; subst; auto.
+      simpl. destruct (Value t1_1) eqn:Ht1. induction Valuestop with(t1:= t1_1); auto. eauto.
+      apply IHt1_1 in H4. rewrite H4; auto.
+    +
+      simpl. inversion H; subst. destruct (NatValue t1) eqn:nv.
+      induction (Valuestop t1). destruct (t1); try solve_by_invert; auto. eauto.
+      apply IHt1 in H1. rewrite H1; auto.
+    +
+      inversion H; subst; auto. simpl. rewrite H1; auto.
+      simpl. destruct (NatValue t1) eqn:nv. induction (Valuestop t1). destruct t1; try solve_by_invert.
+      simpl. inversion nv; auto. eauto.
+      apply IHt1 in H1. rewrite H1; auto.
+    +
+      inversion H; subst; auto. simpl. rewrite H1; auto.
+      simpl. destruct (NatValue t1) eqn:nv. induction (Valuestop t1). destruct t1; try solve_by_invert; eauto. eauto.
+      apply IHt1 in H1. rewrite H1; auto.
+Qed.
+
+Extraction "ocaml/src/eval.ml" eval has_type.
 
 Theorem l8_3_2 : forall t T',
     t \in T' -> Value t = true \/ exists t', t --> t'.
