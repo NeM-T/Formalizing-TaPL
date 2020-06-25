@@ -21,7 +21,7 @@ let rec natValue = function
 
 (** val value : term -> bool **)
 
-let rec value t0 = match t0 with
+let value t0 = match t0 with
 | Tru -> True
 | Fls -> True
 | _ -> natValue t0

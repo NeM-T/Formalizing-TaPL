@@ -18,7 +18,7 @@ Fixpoint NatValue (t: term) : bool :=
   | _ => false
   end.
 
-Fixpoint Value (t: term) : bool :=
+Definition Value (t: term) : bool :=
   match t with
   | Tru => true
   | Fls => true
@@ -421,4 +421,31 @@ Proof with eauto.
     inversion H; subst. generalize H1. apply IHt in H1. inversion H1. inversion H0. intro.
     apply l8_3_1_2 in H3. destruct x; inversion H3. exists Tru. split... apply B_IsZeroZero...
     exists Fls. split... apply B_IsZeroSucc with (nv1:= x)... apply l8_3_7_preservation with (t:= t)...
+Qed.
+
+Definition stop (t1: term) :=
+  Value t1 = false  /\ not (exists t1', t1 --> t1').
+
+Theorem has_typeStop: forall t,
+    stop t -> has_type t = NoneT.
+Proof with eauto.
+  induction t; intros; destruct H; try solve_by_invert.
+  -
+    simpl. destruct (has_type t1) eqn:Tt1... destruct T1... destruct (has_type t2) eqn:Tt2... destruct (has_type t3) eqn:Tt3... destruct (eqT T1 T0) eqn:eq...
+    induction H0.
+    assert (If t1 t2 t3 \in T1).
+    apply has_typeCorrect. simpl. rewrite Tt1. rewrite Tt2. rewrite Tt3. rewrite eq...
+    apply l8_3_2 in H0. inversion H0. inversion H1. auto.
+  -
+    simpl. destruct (has_type t) eqn:Ht... destruct T1... induction H0.
+    assert (Succ t \in Nat). apply has_typeCorrect. simpl. rewrite Ht...
+    apply l8_3_2 in H0. inversion H0. rewrite H1 in H. discriminate. auto.
+  -
+    simpl. destruct (has_type t) eqn:Ht... destruct T1... induction H0.
+    assert (Pred t \in Nat). apply has_typeCorrect. simpl. rewrite Ht...
+    apply l8_3_2 in H0. inversion H0. discriminate. auto.
+  -
+    simpl. destruct (has_type t) eqn:Ht... destruct T1... induction H0.
+    assert (iszero t \in Bool). apply has_typeCorrect. simpl. rewrite Ht...
+    apply l8_3_2 in H0. inversion H0. discriminate. auto.
 Qed.
