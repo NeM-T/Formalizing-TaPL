@@ -43,4 +43,3 @@ let () =
   match (Array.length Sys.argv) with
     1 -> get ()
   | _ -> readfile ()
-
