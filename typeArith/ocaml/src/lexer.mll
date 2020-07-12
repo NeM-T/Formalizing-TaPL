@@ -5,6 +5,7 @@
 rule main = parse
   (* ignore spacing and newline characters *)
   [' ' '\009' '\012' '\n']+     { main lexbuf }
+| ['0'-'9']+ {Parser.NATV (int_of_string (Lexing.lexeme lexbuf))}
 | "("   { Parser.LPAREN }
 | ")"   { Parser.RPAREN }
 | ";"   { Parser.SEMI }
@@ -19,4 +20,3 @@ rule main = parse
 |"fls"  { Parser.FALSE }
 | eof   { exit 0 }
 | _     { raise (Error (Printf.sprintf "At offset %d: unexpected character." (Lexing.lexeme_start lexbuf))) }
-

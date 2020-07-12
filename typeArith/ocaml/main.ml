@@ -7,7 +7,7 @@ let write t =
     let result = Print.manyeval parse in
       if (Eval.value result) = False then
         print_string "実装が悪い" else
-          print_string ("Eval : " ^ Print.eval_string parse);
+          print_string ("Eval : " ^ Print.eval_string parse ^ " → ");
       print_string (Print.eval_string result); print_newline()
   | NoneT -> print_string ("NotEval: " ^ Print.eval_string parse); print_newline ()
 

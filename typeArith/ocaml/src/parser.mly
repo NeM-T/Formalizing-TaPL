@@ -1,13 +1,17 @@
 %{
   open Eval
+  let rec change num = 
+  match num with
+  | 0 -> O
+  | _ -> Succ (change (num - 1))
 %}
-
 
 %token LPAREN RPAREN SEMI
 %token PRED
 %token SUCC
 %token IF THEN ELSE ISO ZERO TRUE FALSE 
 
+%token <int> NATV
 %start toplevel
 %type <Eval.term> toplevel
 %%
@@ -31,6 +35,7 @@ VExpr :
   TRUE    {Tru}
   | FALSE {Fls}
   | ZERO  {O}
+  | n = NATV {change n} 
   | LPAREN e=Expr RPAREN {e}
 
 If0Expr :
