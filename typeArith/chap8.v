@@ -147,32 +147,6 @@ Proof.
   inversion H. inversion H2.
 Qed.
 
-Reserved Notation " t '-->' t' " (at level 40).
-Inductive step: term -> term -> Prop :=
-| E_IfTrue : forall t2 t3,
-    If Tru t2 t3 --> t2
-| E_IfFalse : forall t2 t3,
-    If Fls t2 t3 --> t3
-| E_If : forall t1 t1' t2 t3,
-    t1 --> t1' ->
-    If t1 t2 t3 --> If t1' t2 t3
-| E_Succ : forall t1 t1',
-    t1 --> t1' -> succ t1 --> succ t1'
-| E_PredZero :
-    pred O --> O
-| E_PredSucc : forall nv1,
-    NatValue nv1 -> pred (succ nv1) --> nv1
-| E_Pred : forall t1 t1',
-    t1 --> t1' -> pred t1 --> pred t1'
-| E_IsZeroZero :
-    iszero O --> Tru
-| E_IsZeroSucc : forall nv1,
-    NatValue nv1 -> iszero (succ nv1) --> Fls
-| E_IsZero : forall t1 t1',
-    t1 --> t1' -> iszero t1 --> iszero t1'
-
-  where " t '-->' t' " := (step t t').
-
 Inductive optiont : Type :=
 | Some (T: term)
 | None.
@@ -368,28 +342,6 @@ Proof.
   exists (If Tru Tru O). intros.
   intro HH. inversion HH; subst. inversion H6; inversion H7; subst. inversion H3.
 Qed.
-
-Reserved Notation " t '==>' t' " (at level 40).
-
-Inductive bigstep : term -> term -> Prop :=
-| B_Value : forall t1,
-    value t1 -> t1 ==> t1
-| B_IfTrue : forall t1 t2 v2 t3,
-    t1 ==> Tru -> t2 ==> v2 -> value v2 -> If t1 t2 t3 ==> v2
-| B_IfFalse : forall t1 t2 t3 v3,
-    t1 ==> Fls -> t3 ==> v3 -> value v3 -> If t1 t2 t3 ==> v3
-| B_Succ : forall t1 nv1,
-    t1 ==> nv1 -> NatValue nv1 -> succ t1 ==> succ nv1
-| B_PredZero : forall t1,
-    t1 ==> O -> pred t1 ==> O
-| B_PredSucc : forall t1 nv1,
-    t1 ==> (succ nv1) -> NatValue nv1 -> pred t1 ==> nv1
-| B_IsZeroZero : forall t1,
-    t1 ==> O -> iszero t1 ==> Tru
-| B_IsZeroSucc : forall t1 nv1,
-    t1 ==> (succ nv1) -> NatValue nv1 -> iszero t1 ==> Fls
-
-  where " t '==>' t' " := (bigstep t t').
 
 Lemma NatValueType : forall t1,
     NatValue t1 -> t1 \in Nat.
