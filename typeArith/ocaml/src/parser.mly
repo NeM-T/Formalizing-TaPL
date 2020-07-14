@@ -1,9 +1,9 @@
 %{
-  open Eval
+  open Eval.ArithNat
   let rec change num = 
   match num with
   | 0 -> O
-  | _ -> Succ (change (num - 1))
+  | _ -> Coq_succ (change (num - 1))
 %}
 
 %token LPAREN RPAREN SEMI
@@ -13,7 +13,7 @@
 
 %token <int> NATV
 %start toplevel
-%type <Eval.term> toplevel
+%type <Eval.ArithNat.term> toplevel
 %%
 
 toplevel :
@@ -24,11 +24,11 @@ Expr :
   | e=PExpr {e}
 
 PExpr :
-  PRED e=PExpr {Pred e}
+  PRED e=PExpr {Coq_pred e}
   | e=SEexpr {e}
 
 SEexpr :
-  SUCC e=PExpr {Succ e}
+  SUCC e=PExpr {Coq_succ e}
   | e=VExpr {e}
 
 VExpr :
@@ -39,7 +39,7 @@ VExpr :
   | LPAREN e=Expr RPAREN {e}
 
 If0Expr :
-  ISO e=Expr {Iszero e}
+  ISO e=Expr {Coq_iszero e}
   | e=IfExpr  {e}
 
 IfExpr :

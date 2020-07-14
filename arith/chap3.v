@@ -158,31 +158,31 @@ End ArithBool.
 Module ArithNat.
 
 
-Inductive t: Type :=
-| true
-| false
-| If (t1 t2 t3: t)
+Inductive term: Type :=
+| Tru
+| Fls
+| If (t1 t2 t3: term)
 | O
-| succ (t1: t)
-| pred (t1: t)
-| iszero (t1: t).
+| succ (t1: term)
+| pred (t1: term)
+| iszero (t1: term).
 
 
-Inductive NatValue: t -> Prop :=
+Inductive NatValue: term -> Prop :=
 | nv_O : NatValue O
 | nv_S : forall nv1, NatValue nv1 -> NatValue (succ nv1).
 
-Inductive value: t -> Prop :=
-| v_tru : value true
-| v_fls : value false
+Inductive value: term -> Prop :=
+| v_tru : value Tru
+| v_fls : value Fls
 | v_nat : forall t1, NatValue t1 -> value t1.
 
 Reserved Notation " t '-->' t' " (at level 40).
-Inductive step: t -> t -> Prop :=
+Inductive step: term -> term -> Prop :=
 | E_IfTrue : forall t2 t3,
-    If true t2 t3 --> t2
+    If Tru t2 t3 --> t2
 | E_IfFalse : forall t2 t3,
-    If false t2 t3 --> t3
+    If Fls t2 t3 --> t3
 | E_If : forall t1 t1' t2 t3,
     t1 --> t1' ->
     If t1 t2 t3 --> If t1' t2 t3
@@ -195,9 +195,9 @@ Inductive step: t -> t -> Prop :=
 | E_Pred : forall t1 t1',
     t1 --> t1' -> pred t1 --> pred t1'
 | E_IsZeroZero :
-    iszero O --> true
+    iszero O --> Tru
 | E_IsZeroSucc : forall nv1,
-    NatValue nv1 -> iszero (succ nv1) --> false
+    NatValue nv1 -> iszero (succ nv1) --> Fls
 | E_IsZero : forall t1 t1',
     t1 --> t1' -> iszero t1 --> iszero t1'
 
@@ -253,13 +253,13 @@ Qed.
 
 Reserved Notation " t '==>' t' " (at level 40).
 
-Inductive bigstep : t -> t -> Prop :=
+Inductive bigstep : term -> term -> Prop :=
 | B_Value : forall t1,
     value t1 -> t1 ==> t1
 | B_IfTrue : forall t1 t2 v2 t3,
-    t1 ==> true -> t2 ==> v2 -> value v2 -> If t1 t2 t3 ==> v2
+    t1 ==> Tru -> t2 ==> v2 -> value v2 -> If t1 t2 t3 ==> v2
 | B_IfFalse : forall t1 t2 t3 v3,
-    t1 ==> false -> t3 ==> v3 -> value v3 -> If t1 t2 t3 ==> v3
+    t1 ==> Fls -> t3 ==> v3 -> value v3 -> If t1 t2 t3 ==> v3
 | B_Succ : forall t1 nv1,
     t1 ==> nv1 -> NatValue nv1 -> succ t1 ==> succ nv1
 | B_PredZero : forall t1,
@@ -267,9 +267,9 @@ Inductive bigstep : t -> t -> Prop :=
 | B_PredSucc : forall t1 nv1,
     t1 ==> (succ nv1) -> NatValue nv1 -> pred t1 ==> nv1
 | B_IsZeroZero : forall t1,
-    t1 ==> O -> iszero t1 ==> true
+    t1 ==> O -> iszero t1 ==> Tru
 | B_IsZeroSucc : forall t1 nv1,
-    t1 ==> (succ nv1) -> iszero t1 ==> false
+    t1 ==> (succ nv1) -> iszero t1 ==> Fls
 
   where " t '==>' t' " := (bigstep t t').
 

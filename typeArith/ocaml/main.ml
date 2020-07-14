@@ -5,7 +5,7 @@ let write t =
   match Eval.has_type parse with
   | SomeT _ -> 
     let result = Print.manyeval parse in
-      if (Eval.value result) = False then
+      if (Eval.vb result) = False then
         print_string "実装が悪い" else
           print_string ("Eval : " ^ Print.eval_string parse ^ " → ");
       print_string (Print.eval_string result); print_newline()
