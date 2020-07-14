@@ -19,4 +19,4 @@ rule main = parse
 |"tru"  { Parser.TRUE }
 |"fls"  { Parser.FALSE }
 | eof   { exit 0 }
-| _     { raise (Error (Printf.sprintf "At offset %d: unexpected character." (Lexing.lexeme_start lexbuf))) }
+| _     { raise (Error (Printf.sprintf "at offset %d: unexpected character." (Lexing.lexeme_start lexbuf))) }

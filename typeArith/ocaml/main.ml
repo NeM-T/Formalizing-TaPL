@@ -9,7 +9,7 @@ let write t =
         print_string "実装が悪い" else
           print_string ("Eval : " ^ Print.eval_string parse ^ " → ");
       print_string (Print.eval_string result); print_newline()
-  | NoneT -> print_string ("NotEval: " ^ Print.eval_string parse); print_newline ()
+  | NoneT -> print_string ("Type Error: " ^ Print.eval_string parse); print_newline ()
 
 
 let rec get () =
@@ -35,7 +35,7 @@ let readfile () =
           try ww ()
           with
             End_of_file     -> close_in oc
-          | Lexer.Error mes -> print_string mes; print_newline(); loop ()
+          | Lexer.Error mes -> print_string ("Lexer Error " ^ mes) ; print_newline(); loop ()
           | Parser.Error    -> print_string "Parser Error"; print_newline(); loop () in
       loop ()
 

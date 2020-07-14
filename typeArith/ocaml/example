@@ -1,0 +1,6 @@
+if is0 O then 2 else fls;
+if is0 2 then S O else Pred 3;
+Pred;
+if tru then a else Pred 3;
+S 0;
+

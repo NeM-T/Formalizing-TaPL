@@ -1,6 +1,7 @@
 open Eval
+open ArithNat
 
-let rec eval_string (t: ArithNat.term) =
+let rec eval_string t =
   match t with
   | Tru -> "Tru"
   | Fls -> "Fls"
