@@ -45,10 +45,9 @@ let rec has_type = function
         (match has_type t2 with
          | SomeT t5 ->
            (match has_type t3 with
-            | SomeT t6 ->
-              (match eqT t5 t6 with
-               | True -> SomeT t5
-               | False -> NoneT)
+            | SomeT t6 -> (match eqT t5 t6 with
+                           | True -> SomeT t5
+                           | False -> NoneT)
             | NoneT -> NoneT)
          | NoneT -> NoneT)
       | Nat -> NoneT)
@@ -97,42 +96,35 @@ let vb t0 = match t0 with
 let rec eval = function
 | ArithNat.If (t1, t2, t3) ->
   (match vb t1 with
-   | True ->
-     (match t1 with
-      | ArithNat.Tru -> Some t2
-      | ArithNat.Fls -> Some t3
-      | _ -> None)
-   | False ->
-     (match eval t1 with
-      | Some t1' -> Some (ArithNat.If (t1', t2, t3))
-      | None -> None))
+   | True -> (match t1 with
+              | ArithNat.Tru -> Some t2
+              | ArithNat.Fls -> Some t3
+              | _ -> None)
+   | False -> (match eval t1 with
+               | Some t1' -> Some (ArithNat.If (t1', t2, t3))
+               | None -> None))
 | ArithNat.Coq_succ t1 ->
   (match nVb t1 with
    | True -> None
-   | False ->
-     (match eval t1 with
-      | Some t1' -> Some (ArithNat.Coq_succ t1')
-      | None -> None))
+   | False -> (match eval t1 with
+               | Some t1' -> Some (ArithNat.Coq_succ t1')
+               | None -> None))
 | ArithNat.Coq_pred t1 ->
   (match nVb t1 with
-   | True ->
-     (match t1 with
-      | ArithNat.O -> Some ArithNat.O
-      | ArithNat.Coq_succ nv1 -> Some nv1
-      | _ -> None)
-   | False ->
-     (match eval t1 with
-      | Some t1' -> Some (ArithNat.Coq_pred t1')
-      | None -> None))
+   | True -> (match t1 with
+              | ArithNat.O -> Some ArithNat.O
+              | ArithNat.Coq_succ nv1 -> Some nv1
+              | _ -> None)
+   | False -> (match eval t1 with
+               | Some t1' -> Some (ArithNat.Coq_pred t1')
+               | None -> None))
 | ArithNat.Coq_iszero t1 ->
   (match nVb t1 with
-   | True ->
-     (match t1 with
-      | ArithNat.O -> Some ArithNat.Tru
-      | ArithNat.Coq_succ _ -> Some ArithNat.Fls
-      | _ -> None)
-   | False ->
-     (match eval t1 with
-      | Some t1' -> Some (ArithNat.Coq_iszero t1')
-      | None -> None))
+   | True -> (match t1 with
+              | ArithNat.O -> Some ArithNat.Tru
+              | ArithNat.Coq_succ _ -> Some ArithNat.Fls
+              | _ -> None)
+   | False -> (match eval t1 with
+               | Some t1' -> Some (ArithNat.Coq_iszero t1')
+               | None -> None))
 | _ -> None

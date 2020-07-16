@@ -421,3 +421,119 @@ Proof with eauto.
     assert (iszero t \in Bool). apply has_typeCorrect. simpl. rewrite Ht...
     apply l8_3_2 in H0. inversion H0. discriminate. auto.
 Qed.
+
+Lemma valueNB : forall t,
+    Vb t = true -> t \in Nat \/ t \in Bool.
+Proof.
+  induction t; intros; try solve_by_invert.
+  right. apply T_True. right. apply T_False.
+  left. apply T_Zero. inversion H. left.
+  apply T_Succ. apply Vb_correct in H. apply NatValueType. apply NVb_correct; auto.
+Qed.
+
+Lemma multieval_trance :forall t1 t2 t3,
+    t1 -->* t2 -> t2 -->* t3 -> t1 -->* t3.
+Proof.
+  intros. generalize dependent t3. induction H; intros; auto.
+  eapply multi_step. apply H. auto.
+Qed.
+
+Lemma if_trance : forall t t' t2 t3,
+    t -->* t' -> If t t2 t3 -->* If t' t2 t3.
+Proof.
+  intros. induction H.
+  apply multi_refl. eapply multi_step. apply E_If. apply H. apply IHmulti.
+Qed.
+
+Lemma value_nostep : forall t,
+    value t -> eval t = None.
+Proof.
+  intros. destruct t; try solve_by_inverts 2; try reflexivity; simpl.
+  inversion H. apply NVb_correct in H0. inversion H0. rewrite H3. reflexivity.
+Qed.
+
+Lemma NVb_Vb_false : forall t,
+    Vb t = false -> NVb t = false.
+Proof.
+  induction t; intros; try solve_by_invert; auto.
+Qed.
+
+Theorem stopeval : forall t,
+    exists t', eval t' = None /\ t -->* t'.
+Proof with eauto.
+  induction t.
+  -
+    exists Tru; split... apply multi_refl.
+  -
+    exists Fls; split; auto; apply multi_refl.
+  -
+    inversion IHt1. inversion IHt2. inversion IHt3. clear IHt3. clear IHt2. clear IHt1.
+    destruct H. destruct H0. destruct H1.
+    destruct (Vb x) eqn:IH1.
+    generalize IH1. apply valueNB in IH1. inversion IH1; intros.
+    exists (If x t2 t3).
+    destruct x; try solve_by_invert; split; try reflexivity; simpl.
+    apply if_trance. apply H2.
+    inversion IH0. rewrite H7. reflexivity.
+    apply if_trance...
+
+    destruct x; try solve_by_invert.
+    exists x0. split; auto.
+    apply multieval_trance with (t2:= (If Tru t2 t3)).
+    apply if_trance... eapply multi_step. apply E_IfTrue. auto.
+
+    exists x1; split; auto.
+    apply multieval_trance with (t2:= (If Fls t2 t3)).
+    apply if_trance... eapply multi_step. apply E_IfFalse. auto.
+
+    exists (If x t2 t3). split; simpl. rewrite IH1. rewrite H; reflexivity.
+    apply if_trance...
+  -
+    exists O; split; auto. apply multi_refl.
+  -
+    inversion IHt. destruct H. exists (succ x); split; simpl.
+    destruct (NVb x)... rewrite H. reflexivity.
+    generalize H0; clear; intros.
+    induction H0. apply multi_refl. eapply multi_step. apply E_Succ... apply IHmulti.
+  -
+    inversion IHt. clear IHt. destruct H.
+    destruct (Vb x) eqn:IH1. generalize IH1; intros. apply valueNB in IH1. inversion IH1.
+    destruct x; try solve_by_invert.
+    exists O. split... apply multieval_trance with (pred O). generalize H0; clear; intros. induction H0.
+    apply multi_refl. eapply multi_step. apply E_Pred. apply H. apply IHmulti.
+    eapply multi_step. apply E_PredZero. apply multi_refl.
+
+    exists x. split; simpl.
+    inversion IH0. apply NVb_correct in H3. apply v_nat in H3. apply value_nostep in H3. apply H3.
+    apply multieval_trance with (pred (succ x)). generalize H0. clear; intros. induction H0.
+    apply multi_refl. eapply multi_step. apply E_Pred. apply H. apply IHmulti.
+    eapply multi_step. apply E_PredSucc. inversion IH0. apply NVb_correct... apply multi_refl.
+
+    destruct x; try solve_by_invert.
+    exists (pred Tru). split...
+    generalize H0; clear; intros; induction H0.
+    apply multi_refl. eapply multi_step. apply E_Pred... apply IHmulti.
+
+    exists (pred Fls). split...
+    generalize H0; clear; intros; induction H0.
+    apply multi_refl. eapply multi_step. apply E_Pred... apply IHmulti.
+
+    exists (pred x). simpl; split. apply NVb_Vb_false in IH1. rewrite IH1. rewrite H. reflexivity.
+    generalize H0; clear; intros; induction H0. apply multi_refl.
+    eapply multi_step... apply E_Pred...
+
+  -
+    inversion IHt. clear IHt. destruct H.
+    destruct (NVb x) eqn:IH1.
+    destruct x; try solve_by_invert.
+    exists Tru. split... apply multieval_trance with (iszero O).
+    generalize H0; clear; intros; induction H0. apply multi_refl. eapply multi_step. apply E_IsZero...
+    apply IHmulti. eapply multi_step. apply E_IsZeroZero. apply multi_refl.
+
+    exists (Fls). split... apply multieval_trance with (iszero (succ x)).
+    generalize H0; clear; intros; induction H0. apply multi_refl. eapply multi_step. apply E_IsZero...
+    apply IHmulti. eapply multi_step. apply E_IsZeroSucc. inversion IH1. apply NVb_correct... apply multi_refl.
+
+    exists (iszero x). split; simpl. rewrite IH1. rewrite H. reflexivity.
+    generalize H0; clear; intros; induction H0. apply multi_refl. eapply multi_step. apply E_IsZero... apply IHmulti.
+Qed.

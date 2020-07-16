@@ -325,7 +325,7 @@ Proof.
 Qed.
 
 
-Theorem T3_5_18 : forall t1 v,
+Theorem T3_5_17 : forall t1 v,
     (t1 -->* v) -> value v -> t1 ==> v.
 Proof.
   intros. induction H.
@@ -333,6 +333,14 @@ Proof.
   pose proof (IHmulti H0).
   eapply bigsteptrans. apply H. apply H2.
 Qed.
+
+Ltac solve_by_inverts n :=
+  match goal with | H : ?T |- _ =>
+  match type of T with Prop =>
+    solve [
+      inversion H;
+      match n with S (S (?n')) => subst; solve_by_inverts (S n') end ]
+  end end.
 
 End ArithNat.
 
