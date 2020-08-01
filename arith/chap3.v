@@ -714,7 +714,7 @@ Fixpoint isnumericval (t1: t): bool :=
   | _ => false
   end.
 
-Fixpoint isval (t1: t) : bool :=
+Definition isval (t1: t) : bool :=
   match t1 with
   | tru => true
   | fls => true

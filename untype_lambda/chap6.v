@@ -158,3 +158,104 @@ Proof.
     inversion H5. inversion H6.
     reflexivity.
 Qed.
+
+Fixpoint size (t: term) : nat :=
+  match t with
+  | Var _ => 1
+  | Abs t1 => 1 + (size t1)
+  | App t1 t2 => (size t1) + (size t2)
+  end.
+
+Fixpoint eqb_nat (n1 n2: nat) :=
+  match n1 with
+  | 0 =>
+    match n2 with
+    | 0 => true
+    | _ => false
+    end
+  | S n1' =>
+    match n2 with
+    | 0 => false
+    | S n2' => eqb_nat n1' n2'
+    end
+  end.
+
+Lemma eqb_eq : forall n1 n2,
+    eqb_nat n1 n2 = true <-> eq n1 n2.
+Proof.
+  split. generalize dependent n2.
+  induction n1; induction n2; intros; auto. inversion H. inversion H.
+
+  generalize dependent n2; induction n1; induction n2; intros; auto; simpl.
+  inversion H. inversion H. apply IHn1. inversion H. auto.
+Qed.
+
+Fixpoint leb (n1 n2: nat) :=
+  if eqb_nat n1 n2 then true else
+    match n2 with
+    | 0 => false
+    | S n2' => leb n1 n2'
+    end.
+
+Fixpoint fv_card (t: term) (n: nat) :=
+  match t with
+  | Var n1 =>
+    if leb n n1 then 1 else 0
+  | Abs t1 =>
+    fv_card (t1) (n + 1)
+  | App t1 t2 =>
+    (fv_card t1 n) + (fv_card t2 n)
+  end.
+
+Lemma leb_le : forall n1 n2,
+    n1 <= n2 -> leb n1 n2 = true.
+Proof.
+  intros. induction H; simpl.
+  -
+    induction n1; auto. simpl.
+    assert (eqb_nat n1 n1 = true). apply eqb_eq. auto.
+    rewrite H. reflexivity.
+  -
+    destruct (eqb_nat n1 (S m)); auto.
+Qed.
+
+Lemma le_leb : forall n1 n2,
+    leb n1 n2 = true -> n1 <= n2.
+Proof.
+  destruct n1; intros.
+  apply le_0_n.
+  induction n2. inversion H. inversion H.
+  destruct (eqb_nat n1 n2) eqn: IH1. apply eqb_eq in IH1. rewrite IH1; auto.
+  apply IHn2 in H1. apply le_S. apply H1.
+Qed.
+
+Lemma le_trance : forall n1 n2 n3,
+    n1 <= n2 -> n2 <= n3 -> n1 <= n3.
+Proof.
+  intros. generalize dependent n3. induction H; intros; auto.
+  destruct H0. apply IHle. apply le_S. apply le_n.
+  apply IHle. apply le_S. apply le_S_n. apply le_S. apply H0.
+Qed.
+
+From Coq Require Import Strings.String.
+
+Lemma fv_le : forall t n,
+  fv_card t (n + 1) <= fv_card t n.
+Proof.
+  induction t; intros; simpl; auto.
+  destruct (leb n0 n) eqn:IH1; destruct (leb (n0 + 1) n) eqn:IH2; auto.
+  apply le_leb in IH2. rewrite PeanoNat.Nat.add_1_r in IH2. apply Le.le_Sn_le in IH2. apply leb_le in IH2. rewrite IH1 in IH2. inversion IH2.
+  apply PeanoNat.Nat.add_le_mono; auto.
+Qed.
+
+Lemma e5_3_3 : forall t,
+    fv_card t 0 <= (size (t)).
+Proof.
+  induction t; simpl; auto.
+  -
+    destruct (leb 0 n); auto.
+  -
+    apply le_trance with (fv_card t 0); auto. apply (fv_le t 0).
+  -
+    apply PeanoNat.Nat.add_le_mono; auto.
+Qed.

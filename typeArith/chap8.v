@@ -1,6 +1,5 @@
 Require Coq.extraction.Extraction.
 Extraction Language OCaml.
-Add LoadPath "../arith/".
 Require Import chap3.
 Import ArithNat.
 

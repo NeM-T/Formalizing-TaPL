@@ -51,11 +51,12 @@ type term =
 (** val shift : nat -> nat -> term -> term **)
 
 let rec shift d c = function
-| Var k -> (match leb c k with
-            | True -> (match d with
-                       | O -> Var (sub k (S O))
-                       | S _ -> Var (add k d))
-            | False -> Var k)
+| Var k ->
+  (match leb c k with
+   | True -> (match d with
+              | O -> Var (sub k (S O))
+              | S _ -> Var (add k d))
+   | False -> Var k)
 | Abs t1 -> Abs (shift d (add c (S O)) t1)
 | App (t1, t2) -> App ((shift d c t1), (shift d c t2))
 
@@ -91,9 +92,10 @@ let rec step = function
    | Abs t3 ->
      (match vb t2 with
       | True -> Some (up O (subst O (up (S O) t2) t3))
-      | False -> (match step t2 with
-                  | Some t2' -> Some (App (t1, t2'))
-                  | None -> None))
+      | False ->
+        (match step t2 with
+         | Some t2' -> Some (App (t1, t2'))
+         | None -> None))
    | _ -> (match step t1 with
            | Some t1' -> Some (App (t1', t2))
            | None -> None))
