@@ -2,6 +2,7 @@ Require Coq.extraction.Extraction.
 Require Import Ascii String Coq.Strings.Byte.
 Require Export ExtrOcamlChar.
 Extract Inductive string => "char list" [ "[]" "(::)" ].
+Extract Inductive bool => "bool" ["true" "false"].
 From Coq Require Import Lists.List.
 Extraction Language OCaml.
 Import ListNotations.
@@ -73,22 +74,26 @@ Fixpoint index2name (n : nat) (ctx: context) :=
     end
   end.
 
+Inductive N : Type :=
+| P (n: nat)
+| M1.
+
 Fixpoint shift_walk c d t :=
     match t with
     | Var x n =>
-      if leb c n then
+      if leb c x then
         match d with
-        | 0 =>
+        | M1 =>
           Var (x - 1) (n - 1)
-        | _ =>
-          Var (x + d) (n + d)
+        | P d' =>
+          Var (x + d') (n + d')
         end
       else
         match d with
-        | 0 =>
+        | M1 =>
           Var x (n - 1)
-        | _ =>
-          Var x (n + d)
+        | P d' =>
+          Var x (n + d')
         end
     | Abs x t1 =>
       Abs x (shift_walk (S c) d t1)
@@ -101,21 +106,33 @@ Definition shift d t := shift_walk 0 d t.
 Fixpoint sub_walk j s c t :=
   match t with
   | Var x n =>
-    if eqb_nat x (j + c) then
-      shift c s
+    let jc :=
+        match c with
+        | M1 => (j - 1)
+        | P c' => (j + c')
+        end
+    in
+    if eqb_nat x (jc) then
+      shift c s (*k/k\*)
     else
       Var x n
   | Abs x t1 =>
-    Abs x (sub_walk j s (c + 1) t1)
+    let sc :=
+        match c with
+        | M1 => P 0
+        | P c' => P (c' + 1)
+        end
+    in
+    Abs x (sub_walk j s sc t1)
   | App t1 t2 =>
     App (sub_walk j s c t1) (sub_walk j s c t2)
   end.
 
 Definition sub j s t :=
-  sub_walk j s 0 t.
+  sub_walk j s (P 0) t.
 
 Definition subtop s t :=
-  shift 0 (sub 0 (shift 1 s) t).
+  shift (M1) (sub 0 (shift (P 1) s) t).
 
 Definition isval t :=
   match t with
@@ -123,7 +140,7 @@ Definition isval t :=
   | _ => false
   end.
 
-Fixpoint eval (ctx: context) t :=
+Fixpoint eval t :=
   match t with
   | App t1 t2 =>
     match t1 with
@@ -131,13 +148,13 @@ Fixpoint eval (ctx: context) t :=
       if isval t2 then
         Some (subtop t2 t12)
       else
-        match eval ctx t2 with
+        match eval t2 with
         | Some t2' =>
           Some (App t1 t2')
         | None => None
         end
     | _ =>
-      match eval ctx t1 with
+      match eval t1 with
       | Some t1' =>
         Some (App t1' t2)
       | None => None
@@ -165,26 +182,40 @@ Fixpoint printtm (ctx: context) (t: term) : string :=
       "[BadIndex]"
   end.
 
-Definition test_eval ctx t :=
-  match eval ctx t with
+Definition test_eval t :=
+  match eval t with
   | Some t' => printtm [] t'
   | None => "NotEval"%string
   end.
 
 (* (λ x. x)  λ y. y => λ y. y *)
-Compute (test_eval _ (App (Abs "x" (Var 0 1)) (Abs "y" (Var 0 1)))).
+Compute (test_eval (App (Abs "x" (Var 0 1)) (Abs "y" (Var 0 1)))).
+Compute (eval (App (Abs "x" (Var 0 1)) (Abs "y" (Var 0 1)))).
+(* TmAbs("y", TmVar(0, 1)) *)
 
 (* (λ x. λ y. x) λ z. z => λ y. λ z. z *)
-Compute (test_eval _ (App (Abs "x" (Abs "y" (Var 1 2))) (Abs "z" (Var 0 1)))).
+Compute (test_eval (App (Abs "x" (Abs "y" (Var 1 2))) (Abs "z" (Var 0 1)))).
+Compute (eval (App (Abs "x" (Abs "y" (Var 1 2))) (Abs "z" (Var 0 1)))).
+ (* TmAbs("y", TmAbs("z", TmVar(0, 2))) *)
 
 (* (λ x. λ x'. x) (λ x. x) => λ x'. λ x. x *)
-Compute (test_eval _ (App (Abs "x" (Abs "x" (Var 1 2))) (Abs "x" (Var 0 1)))).
+Compute (test_eval (App (Abs "x" (Abs "x'" (Var 1 2))) (Abs "x" (Var 0 1)))).
+Compute (eval (App (Abs "x" (Abs "x" (Var 1 2))) (Abs "x" (Var 0 1)))).
+ (* TmAbs("x", TmAbs("x", TmVar(0, 2))) *)
 
 (* (λ x. λ y. x) (λ z. z) (λ w. w) => (λ y. λ z. z) (λ w. w) *)
-Compute (test_eval _ (App (App (Abs "x" (Abs "y" (Var 1 2))) (Abs "z" (Var 0 1))) (Abs "w" (Var 0 1)))).
+Compute (test_eval (App (App (Abs "x" (Abs "y" (Var 1 2))) (Abs "z" (Var 0 1))) (Abs "w" (Var 0 1)))).
+Compute (eval (App (App (Abs "x" (Abs "y" (Var 1 2))) (Abs "z" (Var 0 1))) (Abs "w" (Var 0 1)))).
+(* TmApp(TmAbs("y", TmAbs("z", TmVar(0, 2))), TmAbs("w", TmVar(0, 1))) *)
 
 (* (λ x. x) ((λ y. y) (λ z. z))  => (λ x. x) (λ z. z) *)
-Compute (test_eval _ (App (Abs "x" (Var 0 1)) (App (Abs "y" (Var 0 1)) (Abs "z" (Var 0 1))))).
+Compute (test_eval (App (Abs "x" (Var 0 1)) (App (Abs "y" (Var 0 1)) (Abs "z" (Var 0 1))))).
+Compute (eval (App (Abs "x" (Var 0 1)) (App (Abs "y" (Var 0 1)) (Abs "z" (Var 0 1))))).
+(* TmApp(TmAbs("x", TmVar(0, 1)), TmAbs("z", TmVar(0, 1))) *)
 
 (* (λ x. x x) (λ x. x x) => (λ x. x x) (λ x. x x) *)
-Compute (test_eval _ (App (Abs "x" (App (Var 0 1) (Var 0 1))) (Abs "x" (App (Var 0 1) (Var 0 1))))).
+Compute (test_eval (App (Abs "x" (App (Var 0 1) (Var 0 1))) (Abs "x" (App (Var 0 1) (Var 0 1))))).
+Compute (eval (App (Abs "x" (App (Var 0 1) (Var 0 1))) (Abs "x" (App (Var 0 1) (Var 0 1))))).
+ (* TmApp(TmAbs("x", TmApp(TmVar(0, 1), TmVar(0, 1))), TmAbs("x", TmApp(TmVar(0, 1), TmVar(0, 1))) *)
+
+Extraction "./ocaml/chap7/src/eval" eval printtm test_eval.
