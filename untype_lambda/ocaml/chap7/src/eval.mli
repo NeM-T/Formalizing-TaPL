@@ -20,32 +20,36 @@ val add : nat -> nat -> nat
 
 val sub : nat -> nat -> nat
 
-val eqb : char list -> char list -> bool
+type string =
+| EmptyString
+| String of char * string
 
-val append : char list -> char list -> char list
+val eqb : string -> string -> bool
 
-type context = char list list
+val append : string -> string -> string
+
+type context = string list
 
 type term =
 | Var of nat * nat
-| Abs of char list * term
+| Abs of string * term
 | App of term * term
 
 val ctxlen : context -> nat
 
-val eqb_string : char list -> char list -> bool
+val eqb_string : string -> string -> bool
 
-val in0 : char list -> context -> bool
+val in0 : string -> context -> bool
 
-val newname : context -> char list -> nat -> char list
+val newname : context -> string -> nat -> string
 
-val pickfreshname : context -> char list -> (char list list, char list) prod
+val pickfreshname : context -> string -> (string list, string) prod
 
 val eqb_nat : nat -> nat -> bool
 
 val leb : nat -> nat -> bool
 
-val index2name : nat -> context -> char list option
+val index2name : nat -> context -> string option
 
 type n =
 | P of nat
@@ -65,6 +69,6 @@ val isval : term -> bool
 
 val eval : term -> term option
 
-val printtm : context -> term -> char list
+val printtm : context -> term -> string
 
-val test_eval : term -> char list
+val test_eval : term -> string
