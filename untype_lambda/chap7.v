@@ -2,7 +2,9 @@ Require Coq.extraction.Extraction.
 Require Import Ascii String Coq.Strings.Byte.
 Require Export ExtrOcamlChar.
 Extract Inductive bool => "bool" ["true" "false"].
+Extract Inductive string => "char list" [ "[]" "(::)" ].
 From Coq Require Import Lists.List.
+Extract Inductive list => "list" [ "[]" "(::)" ].
 Extraction Language OCaml.
 Import ListNotations.
 

@@ -10,46 +10,38 @@ type 'a option =
 type ('a, 'b) prod =
 | Pair of 'a * 'b
 
-type 'a list =
-| Nil
-| Cons of 'a * 'a list
-
 val length : 'a1 list -> nat
 
 val add : nat -> nat -> nat
 
 val sub : nat -> nat -> nat
 
-type string =
-| EmptyString
-| String of char * string
+val eqb : char list -> char list -> bool
 
-val eqb : string -> string -> bool
+val append : char list -> char list -> char list
 
-val append : string -> string -> string
-
-type context = string list
+type context = char list list
 
 type term =
 | Var of nat * nat
-| Abs of string * term
+| Abs of char list * term
 | App of term * term
 
 val ctxlen : context -> nat
 
-val eqb_string : string -> string -> bool
+val eqb_string : char list -> char list -> bool
 
-val in0 : string -> context -> bool
+val in0 : char list -> context -> bool
 
-val newname : context -> string -> nat -> string
+val newname : context -> char list -> nat -> char list
 
-val pickfreshname : context -> string -> (string list, string) prod
+val pickfreshname : context -> char list -> (char list list, char list) prod
 
 val eqb_nat : nat -> nat -> bool
 
 val leb : nat -> nat -> bool
 
-val index2name : nat -> context -> string option
+val index2name : nat -> context -> char list option
 
 type n =
 | P of nat
@@ -69,6 +61,6 @@ val isval : term -> bool
 
 val eval : term -> term option
 
-val printtm : context -> term -> string
+val printtm : context -> term -> char list
 
-val test_eval : term -> string
+val test_eval : term -> char list
