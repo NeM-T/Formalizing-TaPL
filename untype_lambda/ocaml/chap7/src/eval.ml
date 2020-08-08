@@ -39,9 +39,10 @@ let rec eqb s1 s2 =
   | [] -> (match s2 with
            | [] -> true
            | _::_ -> false)
-  | c1::s1' -> (match s2 with
-                | [] -> false
-                | c2::s2' -> if (=) c1 c2 then eqb s1' s2' else false)
+  | c1::s1' ->
+    (match s2 with
+     | [] -> false
+     | c2::s2' -> if (=) c1 c2 then eqb s1' s2' else false)
 
 (** val append : char list -> char list -> char list **)
 
@@ -82,7 +83,8 @@ let rec newname ctx name n0 =
         | S n' -> newname ctx (append name ('\''::[])) n')
   else name
 
-(** val pickfreshname : context -> char list -> (char list list, char list) prod **)
+(** val pickfreshname :
+    context -> char list -> (char list list, char list) prod **)
 
 let pickfreshname ctx name =
   let name' = newname ctx name (S (S (S (S (S (S (S (S (S (S O)))))))))) in
@@ -102,9 +104,11 @@ let rec eqb_nat n1 n2 =
 (** val leb : nat -> nat -> bool **)
 
 let rec leb n1 n2 =
-  if eqb_nat n1 n2 then true else (match n2 with
-                                   | O -> false
-                                   | S n2' -> leb n1 n2')
+  if eqb_nat n1 n2
+  then true
+  else (match n2 with
+        | O -> false
+        | S n2' -> leb n1 n2')
 
 (** val index2name : nat -> context -> char list option **)
 
@@ -151,7 +155,8 @@ let rec sub_walk j s c = function
 | Abs (x, t1) ->
   let sc = match c with
            | P c' -> P (add c' (S O))
-           | M1 -> P O in Abs (x, (sub_walk j s sc t1))
+           | M1 -> P O in
+  Abs (x, (sub_walk j s sc t1))
 | App (t1, t2) -> App ((sub_walk j s c t1), (sub_walk j s c t2))
 
 (** val sub0 : nat -> term -> term -> term **)
@@ -198,10 +203,13 @@ let rec printtm ctx = function
 | Abs (x, t1) ->
   let Pair (ctx', x') = pickfreshname ctx x in
   append
-    (append (append (append ('('::('\206'::('\187'::[]))) x') ('.'::(' '::[]))) (printtm ctx' t1))
-    (')'::[])
+    (append
+      (append (append ('('::('\206'::('\187'::[]))) x') ('.'::(' '::[])))
+      (printtm ctx' t1)) (')'::[])
 | App (t1, t2) ->
-  append (append (append (append ('('::[]) (printtm ctx t1)) (' '::[])) (printtm ctx t2)) (')'::[])
+  append
+    (append (append (append ('('::[]) (printtm ctx t1)) (' '::[]))
+      (printtm ctx t2)) (')'::[])
 
 (** val test_eval : term -> char list **)
 

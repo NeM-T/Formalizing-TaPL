@@ -11,3 +11,4 @@ The Coq Proof Assistant, version 8.11.2
 - [x] Chap.7(untype_lambda)(パーサーなし)
 - [x] Chap.8(typeArith)
 - [ ] Chap.9(hastype_lambda)
+- [ ] Chap.10(./hastype_lambda/chap9_deBruijin.v_にて形式化)

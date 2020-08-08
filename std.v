@@ -5,42 +5,6 @@ From Coq Require Import Logic.FunctionalExtensionality.
 From Coq Require Import Lists.List.
 Import ListNotations.
 
-Definition eqb_string (x y : string) : bool :=
-  if string_dec x y then true else false.
-
-Theorem eqb_string_refl : forall s : string, true = eqb_string s s.
-Proof. intros s. unfold eqb_string. destruct (string_dec s s) as [|Hs].
-  - reflexivity.
-  - destruct Hs. reflexivity.
-Qed.
-
-
-Theorem eqb_string_true_iff : forall x y : string,
-    eqb_string x y = true <-> x = y.
-Proof.
-   intros x y.
-   unfold eqb_string.
-   destruct (string_dec x y) as [|Hs].
-   - subst. split. reflexivity. reflexivity.
-   - split.
-     + intros contra. discriminate contra.
-     + intros H. rewrite H in Hs. destruct Hs. reflexivity.
-Qed.
-
-
-Theorem eqb_string_false_iff : forall x y : string,
-    eqb_string x y = false <-> x <> y.
-Proof.
-  intros x y. rewrite <- eqb_string_true_iff.
-  rewrite not_true_iff_false. reflexivity. Qed.
-
-
-Theorem false_eqb_string : forall x y : string,
-   x <> y -> eqb_string x y = false.
-Proof.
-  intros x y. rewrite eqb_string_false_iff.
-  intros H. apply H. Qed.
-
 Definition total_map (A : Type) := string -> A.
 
 Definition t_empty {A : Type} (v : A) : total_map A :=
@@ -48,7 +12,7 @@ Definition t_empty {A : Type} (v : A) : total_map A :=
 
 Definition t_update {A : Type} (m : total_map A)
                     (x : string) (v : A) :=
-  fun x' => if eqb_string x x' then v else m x'.
+  fun x' => if String.eqb x x' then v else m x'.
 
 Definition examplemap :=
   t_update (t_update (t_empty false) "foo" true)
@@ -59,9 +23,7 @@ Notation "'_' '!->' v" := (t_empty v)
 
 Example example_empty := (_ !-> false).
 
-Notation "x '!->' v ';' m" := (t_update m x v)
-                              (at level 100, v at next level, right associativity).
-
+Notation "x '!->' v ';' m" := (t_update m x v) (at level 100, v at next level, right associativity).
 
 Definition examplemap' :=
   ( "bar" !-> true;
@@ -92,7 +54,7 @@ Proof.
 Lemma t_update_eq : forall (A : Type) (m : total_map A) x v,
     (x !-> v ; m) x = v.
 Proof.
-  intros. unfold t_update. rewrite <- eqb_string_refl. reflexivity.
+  intros. unfold t_update. rewrite eqb_refl. reflexivity.
 Qed.
 
 
@@ -100,44 +62,40 @@ Theorem t_update_neq : forall (A : Type) (m : total_map A) x1 x2 v,
     x1 <> x2 ->
     (x1 !-> v ; m) x2 = m x2.
 Proof.
- unfold t_update. intros. apply false_eqb_string in H. rewrite H. reflexivity.
+ unfold t_update. intros. apply eqb_neq in H. rewrite H. reflexivity.
 Qed.
 
 Lemma t_update_shadow : forall (A : Type) (m : total_map A) x v1 v2,
     (x !-> v2 ; x !-> v1 ; m) = (x !-> v2 ; m).
 Proof.
-  intros. unfold t_update.  extensionality y. induction (eqb_string x y). reflexivity. reflexivity.
+  intros. unfold t_update.  extensionality y. induction (String.eqb x y). reflexivity. reflexivity.
 Qed.
 
 Lemma eqb_stringP : forall x y : string,
-    reflect (x = y) (eqb_string x y).
+    reflect (x = y) (String.eqb x y).
 Proof.
-  intros. destruct eqb_string eqn:H.
- - apply eqb_string_true_iff in H. apply ReflectT. apply H.
- - apply eqb_string_false_iff in H. apply ReflectF. apply H.
-Qed. 
+  intros. destruct String.eqb eqn:H.
+ - apply eqb_eq in H. apply ReflectT. apply H.
+ - apply eqb_neq in H. apply ReflectF. apply H.
+Qed.
 
 Theorem t_update_same : forall (A : Type) (m : total_map A) x,
     (x !-> m x ; m) = m.
 Proof.
   intros. unfold t_update. extensionality y.
-  destruct eqb_string eqn:H.
-  -  apply eqb_string_true_iff in H. rewrite H. reflexivity.
+  destruct String.eqb eqn:H.
+  -  apply eqb_eq in H. rewrite H. reflexivity.
   - reflexivity.
 Qed.
 
 
-
-Theorem t_update_permute : forall (A : Type) (m : total_map A)
-                                  v1 v2 x1 x2,
+Theorem t_update_permute : forall (A : Type) (m : total_map A) v1 v2 x1 x2,
     x2 <> x1 ->
-    (x1 !-> v1 ; x2 !-> v2 ; m)
-    =
-    (x2 !-> v2 ; x1 !-> v1 ; m).
+    (x1 !-> v1 ; x2 !-> v2 ; m) = (x2 !-> v2 ; x1 !-> v1 ; m).
 Proof.
   intros. unfold t_update. extensionality y.
-   destruct (eqb_string x1 y) eqn:H1.
- - apply eqb_string_true_iff in H1. rewrite H1 in H. apply eqb_string_false_iff in H. rewrite H. reflexivity.
+   destruct (String.eqb x1 y) eqn:H1.
+ - apply eqb_eq in H1. rewrite H1 in H. apply eqb_neq in H. rewrite H. reflexivity.
  - reflexivity.
 Qed.
 
@@ -145,15 +103,11 @@ Qed.
 (*Partial maps*)
 Definition partial_map (A : Type) := total_map (option A).
 
-Definition empty {A : Type} : partial_map A :=
-  t_empty None.
+Definition empty {A : Type} : partial_map A := t_empty None.
 
-Definition update {A : Type} (m : partial_map A)
-           (x : string) (v :A) :=
-  (x !-> Some v ; m).
+Definition update {A : Type} (m : partial_map A) (x : string) (v :A) := (x !-> Some v ; m).
 
-Notation "x '|->' v ';' m" := (update m x v)
-  (at level 100, v at next level, right associativity).
+Notation "x '|->' v ';' m" := (update m x v) (at level 100, v at next level, right associativity).
 
 Lemma apply_empty : forall (A : Type) (x : string),
     @empty A x = None.
@@ -175,7 +129,8 @@ Theorem update_neq : forall (A : Type) (m : partial_map A) x1 x2 v,
 Proof.
   intros A m x1 x2 v H.
   unfold update. rewrite t_update_neq. reflexivity.
-  apply H. Qed.
+  apply H.
+Qed.
 
 Lemma update_shadow : forall (A : Type) (m : partial_map A) x v1 v2,
     (x |-> v2 ; x |-> v1 ; m) = (x |-> v2 ; m).
@@ -212,30 +167,6 @@ Ltac solve_by_inverts n :=
 Ltac solve_by_invert :=
   solve_by_inverts 1.
 
-Inductive Q : Type :=
-| P (n : nat)
-| M (n : nat).
-
-Fixpoint plusQ q1 q2 :=
-  match (q1, q2) with
-  | (P n1, P n2) =>
-    P (n1 + n2)
-  | (P n1, M n2) =>
-    if n2 <=? n1 then
-      P (n1 - n2)
-    else
-      M (n2 - n1)
-  | (M n1, P n2) =>
-    if n1 <=? n2 then
-      P (n2 - n1)
-    else
-      M (n1 - n2)
-  | (M n1, M n2) =>
-    M (n1 + n2)
-  end.
-
-Notation "q1 '+.' q2"  := (plusQ q1 q2) (at level 50).
-
 Definition relation (X : Type) := X -> X -> Prop.
 
 Inductive multi {X : Type} (R : relation X) : relation X :=
@@ -244,3 +175,72 @@ Inductive multi {X : Type} (R : relation X) : relation X :=
                     R x y ->
                     multi R y z ->
                     multi R x z.
+Fixpoint eqb_nat (n1 n2: nat) :=
+  match n1 with
+  | 0 =>
+    match n2 with
+    | 0 => true
+    | _ => false
+    end
+  | S n1' =>
+    match n2 with
+    | 0 => false
+    | S n2' => eqb_nat n1' n2'
+    end
+  end.
+
+Fixpoint leb (n1 n2: nat) :=
+  if eqb_nat n1 n2 then true else
+    match n2 with
+    | 0 => false
+    | S n2' => leb n1 n2'
+    end.
+
+
+
+Lemma eqb_eq : forall n1 n2,
+    eqb_nat n1 n2 = true <-> eq n1 n2.
+Proof.
+  split. generalize dependent n2.
+  induction n1; induction n2; intros; auto. inversion H. inversion H.
+
+  generalize dependent n2; induction n1; induction n2; intros; auto; simpl.
+  inversion H. inversion H. apply IHn1. inversion H. auto.
+Qed.
+
+Lemma leb_le : forall n1 n2,
+    n1 <= n2 -> leb n1 n2 = true.
+Proof.
+  intros. induction H; simpl.
+  -
+    induction n1; auto. simpl.
+    assert (eqb_nat n1 n1 = true). apply eqb_eq. auto.
+    rewrite H. reflexivity.
+  -
+    destruct (eqb_nat n1 (S m)); auto.
+Qed.
+
+Lemma le_trance : forall n1 n2 n3,
+    n1 <= n2 -> n2 <= n3 -> n1 <= n3.
+Proof.
+  intros. generalize dependent n3. induction H; intros; auto.
+  destruct H0. apply IHle. apply le_S. apply le_n.
+  apply IHle. apply le_S. apply le_S_n. apply le_S. apply H0.
+Qed.
+
+
+Lemma le_leb : forall n1 n2,
+    leb n1 n2 = true -> n1 <= n2.
+Proof.
+  destruct n1; intros.
+  apply le_0_n.
+  induction n2. inversion H. inversion H.
+  destruct (eqb_nat n1 n2) eqn: IH1. apply eqb_eq in IH1. rewrite IH1; auto.
+  apply IHn2 in H1. apply le_S. apply H1.
+Qed.
+
+Lemma le_eq_leb : forall n1 n2,
+    leb n1 n2 = true <-> n1 <= n2.
+Proof.
+  split. apply le_leb. apply leb_le.
+Qed.
