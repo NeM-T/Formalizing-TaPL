@@ -142,31 +142,31 @@ Inductive step : term -> term -> Prop :=
 
 where "t1 '-->' t2" := (step t1 t2).
 
-Reserved Notation "Gamma '|-' t '\in' T" (at level 40).
+Reserved Notation "ctx '|-' t '\in' T" (at level 40).
 
 Definition context := partial_map ty.
 Inductive has_type : context -> term -> ty -> Prop :=
-  | T_Var : forall Gamma x T,
-      Gamma x = Some T ->
-      Gamma |- var x \in T
-  | T_Abs : forall Gamma x T11 T12 t12,
-      (x |-> T11 ; Gamma) |- t12 \in T12 ->
-      Gamma |- abs x T11 t12 \in Arrow T11 T12
-  | T_App : forall T11 T12 Gamma t1 t2,
-      Gamma |- t1 \in Arrow T11 T12 ->
-      Gamma |- t2 \in T11 ->
-      Gamma |- app t1 t2 \in T12
-  | T_Tru : forall Gamma,
-       Gamma |- tru \in Bool
-  | T_Fls : forall Gamma,
-       Gamma |- fls \in Bool
-  | T_If : forall t1 t2 t3 T Gamma,
-       Gamma |- t1 \in Bool ->
-       Gamma |- t2 \in T ->
-       Gamma |- t3 \in T ->
-       Gamma |- If t1 t2 t3 \in T
+  | T_Var : forall ctx x T,
+      ctx x = Some T ->
+      ctx |- var x \in T
+  | T_Abs : forall ctx x T11 T12 t12,
+      (x |-> T11 ; ctx) |- t12 \in T12 ->
+      ctx |- abs x T11 t12 \in Arrow T11 T12
+  | T_App : forall T11 T12 ctx t1 t2,
+      ctx |- t1 \in Arrow T11 T12 ->
+      ctx |- t2 \in T11 ->
+      ctx |- app t1 t2 \in T12
+  | T_Tru : forall ctx,
+       ctx |- tru \in Bool
+  | T_Fls : forall ctx,
+       ctx |- fls \in Bool
+  | T_If : forall t1 t2 t3 T ctx,
+       ctx |- t1 \in Bool ->
+       ctx |- t2 \in T ->
+       ctx |- t3 \in T ->
+       ctx |- If t1 t2 t3 \in T
 
-where "Gamma '|-' t '\in' T" := (has_type Gamma t T).
+where "ctx '|-' t '\in' T" := (has_type ctx t T).
 
 Fixpoint eqb_ty T1 T2 :=
   match (T1, T2) with
@@ -416,4 +416,111 @@ Proof.
   -
     inversion H0; subst; inversion H; subst; auto.
     apply T_If; auto; apply IHt1; auto.
+Qed.
+
+
+Inductive appears_free_in : string -> term -> Prop :=
+  | afi_var : forall x,
+      appears_free_in x (var x)
+  | afi_app1 : forall x t1 t2,
+      appears_free_in x t1 ->
+      appears_free_in x (app t1 t2)
+  | afi_app2 : forall x t1 t2,
+      appears_free_in x t2 ->
+      appears_free_in x (app t1 t2)
+  | afi_abs : forall x y T11 t12,
+      y <> x ->
+      appears_free_in x t12 ->
+      appears_free_in x (abs y T11 t12)
+  | afi_test1 : forall x t1 t2 t3,
+      appears_free_in x t1 ->
+      appears_free_in x (If t1 t2 t3)
+  | afi_test2 : forall x t1 t2 t3,
+      appears_free_in x t2 ->
+      appears_free_in x (If t1 t2 t3)
+  | afi_test3 : forall x t1 t2 t3,
+      appears_free_in x t3 ->
+      appears_free_in x (If t1 t2 t3).
+
+Hint Constructors appears_free_in.
+
+Definition closed (t:term) := forall x, ~ appears_free_in x t.
+
+Lemma free_in_context : forall x t T ctx,
+   appears_free_in x t ->
+   ctx |- t \in T ->
+   exists T', ctx x = Some T'.
+Proof.
+  intros x t T ctx H H0. generalize dependent ctx. generalize dependent T.
+  induction H; intros; try solve [inversion H0; eauto].
+  -
+    inversion H1; subst. apply IHappears_free_in in H7. inversion H7. unfold update in H2.
+    rewrite t_update_neq in H2; eauto.
+Qed.
+
+Lemma context_invariance : forall ctx ctx' t T,
+     ctx |- t \in T ->
+     (forall x, appears_free_in x t -> ctx x = ctx' x) ->
+     ctx' |- t \in T.
+Proof.
+  intros. generalize dependent ctx'; induction H; intros; eauto.
+  -
+    apply T_Var. rewrite <- H0; auto.
+  -
+    apply T_Abs. apply IHhas_type. intros. unfold update, t_update. destruct (x == x0) eqn:IH; auto. eapply afi_abs in H1. apply H0. apply H1. apply eqb_neq ; auto.
+  -
+    eapply T_App; eauto.
+  -
+    apply T_Tru.
+  -
+    apply T_Fls.
+  -
+    apply T_If; eauto.
+Qed.
+
+
+Lemma empty_type_close : forall t T ,
+    empty |- t \in T ->
+    closed t.
+Proof.
+  unfold closed, not. intros. eapply free_in_context with (ctx:=empty) in H0. inversion H0. inversion H1.
+  apply H.
+Qed.
+
+Lemma L9_3_8_SF : forall t s S T ctx x,
+    (x |-> S; ctx) |- t \in T ->
+    empty |- s \in S ->
+    ctx |- [x := s]t \in T.
+Proof.
+  induction t; simpl; intros; eauto.
+  -
+    inversion H; subst. destruct (x == name) eqn:IH1. apply String.eqb_eq in IH1; subst.
+    unfold update in H3. rewrite t_update_eq in H3. inversion H3; subst; auto. eapply context_invariance.
+    apply H0. intros. apply empty_type_close in H0. einduction H0. apply H1. unfold update, t_update in H3.
+    rewrite IH1 in H3. apply T_Var. apply H3.
+  -
+    destruct (x == name) eqn:IH. apply String.eqb_eq in IH; subst. inversion H; subst. apply T_Abs.
+    unfold update in H6; rewrite t_update_shadow in H6. unfold update. apply H6.
+    inversion H; subst. apply T_Abs. eapply IHt; eauto. unfold update. apply L9_3_6. apply eqb_neq. rewrite eqb_sym; auto. apply H6.
+  -
+    inversion H; subst. eapply T_App; eauto.
+  -
+    inversion H; subst. constructor.
+  -
+    inversion H; subst. constructor.
+  -
+    inversion H; subst. constructor; eauto.
+Qed.
+
+Lemma L9_3_9_SF : forall t t' T,
+    empty |- t \in T ->
+    t --> t' ->
+    empty |- t' \in T.
+Proof.
+  induction t; intros; try solve_by_invert.
+  -
+    inversion H; subst. inversion H0; subst; try solve [eapply T_App; eauto].
+    inversion H4; subst. eapply L9_3_8_SF in H3; eauto.
+  -
+    inversion H; subst. inversion H0; subst; eauto. apply T_If; eauto.
 Qed.
