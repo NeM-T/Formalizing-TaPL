@@ -1,7 +1,8 @@
 # TaPL in Coq
 あきるor諦めるまでCoqでTaPLの形式化をします。  
-~~余裕があったらパーサーはOCamlで実装するかも。~~ します。  
-The Coq Proof Assistant, version 8.11.2   
+パーサー付きのものもある。
+chap8まで：The Coq Proof Assistant:version 8.11.2   
+chap9以降：The Coq Proof Assistant:version 8.12.0   
 
 
 - [x] Chap.3(arith)
@@ -10,5 +11,5 @@ The Coq Proof Assistant, version 8.11.2
 - [x] Chap.6(untype_lambda)
 - [x] Chap.7(untype_lambda)(パーサーなし)
 - [x] Chap.8(typeArith)
-- [ ] Chap.9(hastype_lambda)
-- [ ] Chap.10(./hastype_lambda/chap9_deBruijin.v_にて形式化)
+- [ ] Chap.9(hastype_lambda/typeLambda_string)
+- [ ] Chap.10(hastype_lambda/deBruijn)

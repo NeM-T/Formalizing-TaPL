@@ -244,3 +244,37 @@ Lemma le_eq_leb : forall n1 n2,
 Proof.
   split. apply le_leb. apply leb_le.
 Qed.
+
+Lemma leb0 : forall n,
+    leb 0 n = true.
+Proof.
+  induction n; auto.
+Qed.
+
+Lemma leb_F : forall n1 n2,
+    leb n1 n2 = false <-> not (le n1 n2).
+Proof.
+  split; intros. intro. apply leb_le in H0. rewrite H in H0; inversion H0.
+  destruct n1. induction H. apply Nat.le_0_l. generalize dependent n1; induction n2; intros.
+  reflexivity. simpl. destruct eqb_nat eqn:IH. apply eqb_eq in IH; subst. induction H. apply Nat.le_refl.
+  apply IHn2. intro. apply H. apply le_leb. simpl. rewrite IH. apply leb_le. apply H0.
+Qed.
+
+Lemma leb_neq : forall n1 n2,
+    leb n1 n2 = false -> n2 < n1.
+Proof.
+  intros. apply leb_F in H. apply Nat.nle_gt in H. auto.
+Qed.
+
+Lemma eqb_refl : forall n,
+    eqb_nat n n = true.
+Proof.
+  induction n; auto.
+Qed.
+
+
+Lemma leb_refl : forall n,
+    leb n n = true.
+Proof.
+  induction n; auto. simpl. rewrite eqb_refl. reflexivity.
+Qed.

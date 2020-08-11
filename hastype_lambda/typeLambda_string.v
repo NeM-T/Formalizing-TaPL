@@ -7,7 +7,7 @@ From Coq Require Import Lists.List.
 Extract Inductive list => "list" [ "[]" "(::)" ].
 Extraction Language OCaml.
 Import ListNotations.
-Require Import std.
+Load "../std".
 
 Inductive ty : Type :=
 | Bool
