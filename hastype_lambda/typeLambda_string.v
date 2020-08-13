@@ -105,11 +105,11 @@ Proof.
   -
     intros. induction H; simpl; auto.
     +
-      rewrite eqb_refl. reflexivity.
+      rewrite String.eqb_refl. reflexivity.
     +
       apply eqb_neq in H. rewrite H. reflexivity.
     +
-      rewrite eqb_refl. reflexivity.
+      rewrite String.eqb_refl. reflexivity.
     +
       apply eqb_neq in H. rewrite H. rewrite IHsubsti. reflexivity.
     +
@@ -117,7 +117,6 @@ Proof.
     +
       rewrite <- IHsubsti2, IHsubsti1, IHsubsti3. reflexivity.
 Qed.
-
 
 Reserved Notation "t1 '-->' t2" (at level 40).
 
@@ -142,9 +141,52 @@ Inductive step : term -> term -> Prop :=
 
 where "t1 '-->' t2" := (step t1 t2).
 
-Reserved Notation "ctx '|-' t '\in' T" (at level 40).
+Definition isval t :=
+  match t with
+  | tru => true
+  | fls => true
+  | abs _ _ _ => true
+  | _ => false
+  end.
+
+Fixpoint eval t :=
+  match t with
+  | app t1 t2 =>
+    if isval t1 then
+      if isval t2 then
+        match t1 with
+        | abs x _ t12 =>
+          Some ([x:=t2]t12)
+        | _ => None
+        end
+      else
+        match eval t2 with
+        | Some t2' => Some (app t1 t2')
+        | None => None
+        end
+    else
+      match eval t1 with
+      | Some t1' => Some (app t1' t2)
+      | None => None
+      end
+  | If t1 t2 t3 =>
+    match eval t1 with
+    | Some t1' => Some (If t1' t2 t3)
+    | None =>
+      match t1 with
+      | tru => Some t2
+      | fls => Some t3
+      | _ => None
+      end
+    end
+  | _ => None
+  end.
+
+Open Scope string.
 
 Definition context := partial_map ty.
+Reserved Notation "ctx '|-' t '\in' T" (at level 40).
+
 Inductive has_type : context -> term -> ty -> Prop :=
   | T_Var : forall ctx x T,
       ctx x = Some T ->
@@ -263,8 +305,6 @@ Proof.
       apply T_If; auto.
 Qed.
 
-Extraction "ocaml/str/src/eval.ml" typeof.
-
 Lemma eqb_ty_f : forall T1 T2,
     eqb_ty T1 (T1 |--> T2) = false.
 Proof.
@@ -382,26 +422,17 @@ Lemma L9_3_8 : forall t s S T ctx x,
     ctx |- s \in S ->
     ctx |- [x := s]t \in T.
 Proof.
-  induction t; intros; simpl.
+  induction t; intros; simpl; inversion H; subst; try solve [econstructor; eauto].
   -
-    inversion H; subst. destruct (x == name) eqn:IH. apply String.eqb_eq in IH; subst.
+    destruct (x == name) eqn:IH. apply String.eqb_eq in IH; subst.
     rewrite update_eq in H3. inversion H3. subst. apply H0.
     unfold update, t_update in H3. rewrite IH in H3. apply T_Var. apply H3.
   -
-    inversion H; subst. apply T_Abs.
-    destruct (x == name) eqn:IH. apply String.eqb_eq in IH. subst. unfold update in H6; rewrite t_update_shadow in H6. unfold update; auto.
+    apply T_Abs. destruct (x == name) eqn:IH.
+    apply String.eqb_eq in IH. subst. unfold update in H6; rewrite t_update_shadow in H6. unfold update; auto.
     apply eqb_neq in IH. apply L9_3_6 in H6; auto.
-    eapply IHt; eauto. apply L9_3_7. admit. apply H0.
-  -
-    inversion H; subst. eapply T_App. eapply IHt1; eauto.
-    eapply IHt2; eauto.
-  -
-    inversion H; subst. apply T_Tru.
-  -
-    inversion H; subst; apply T_Fls.
-  -
-    inversion H; subst. apply T_If. eapply IHt1; eauto. eapply IHt2; eauto. eapply IHt3; eauto.
-Admitted. (*閉じた項のみを想定しているのでAdmit*)
+    eapply IHt; eauto. apply L9_3_7; auto. admit.
+Admitted. (*同じ名前の項はないこと前提なのでAdmit*)
 
 Lemma T9_3_9 : forall t t' T ctx,
     ctx |- t \in T ->
@@ -492,24 +523,19 @@ Lemma L9_3_8_SF : forall t s S T ctx x,
     empty |- s \in S ->
     ctx |- [x := s]t \in T.
 Proof.
-  induction t; simpl; intros; eauto.
+  induction t; simpl; intros; inversion H; subst; try solve [econstructor; eauto].
   -
-    inversion H; subst. destruct (x == name) eqn:IH1. apply String.eqb_eq in IH1; subst.
-    unfold update in H3. rewrite t_update_eq in H3. inversion H3; subst; auto. eapply context_invariance.
-    apply H0. intros. apply empty_type_close in H0. einduction H0. apply H1. unfold update, t_update in H3.
-    rewrite IH1 in H3. apply T_Var. apply H3.
+    destruct (x == name) eqn:IH1.
+    +
+      apply String.eqb_eq in IH1; subst. unfold update in H3. rewrite t_update_eq in H3. inversion H3; subst; auto. eapply context_invariance. apply H0. intros. apply empty_type_close in H0. einduction H0. apply H1.
+    +
+      unfold update, t_update in H3. rewrite IH1 in H3. apply T_Var. apply H3.
   -
-    destruct (x == name) eqn:IH. apply String.eqb_eq in IH; subst. inversion H; subst. apply T_Abs.
-    unfold update in H6; rewrite t_update_shadow in H6. unfold update. apply H6.
-    inversion H; subst. apply T_Abs. eapply IHt; eauto. unfold update. apply L9_3_6. apply eqb_neq. rewrite eqb_sym; auto. apply H6.
-  -
-    inversion H; subst. eapply T_App; eauto.
-  -
-    inversion H; subst. constructor.
-  -
-    inversion H; subst. constructor.
-  -
-    inversion H; subst. constructor; eauto.
+    apply T_Abs. destruct (x == name) eqn:IH.
+    +
+      apply String.eqb_eq in IH; subst. unfold update in H6; rewrite t_update_shadow in H6. unfold update. apply H6.
+    +
+      eapply IHt; eauto. unfold update. apply L9_3_6. apply eqb_neq. rewrite eqb_sym; auto. apply H6.
 Qed.
 
 Lemma L9_3_9_SF : forall t t' T,
@@ -524,3 +550,29 @@ Proof.
   -
     inversion H; subst. inversion H0; subst; eauto. apply T_If; eauto.
 Qed.
+
+
+Lemma eval_step : forall t t',
+    eval t = Some t' <-> step t t'.
+Proof.
+  split; intros.
+  -
+    generalize dependent t'; induction t; intros; try solve_by_invert.
+    simpl in H.
+    destruct (isval t1) eqn:IHv1. destruct (isval t2) eqn:IHv. destruct t1 eqn:IH1; try solve_by_invert.
+    inversion H; subst. apply E_AppAbs. destruct t2; try solve_by_invert; try constructor.
+    destruct (eval t2) eqn:IH2. inversion H; subst. apply E_App2. destruct t1; try solve_by_invert; try constructor.
+    apply IHt2; reflexivity. inversion H. destruct (eval t1) eqn:IH1; inversion H; subst. apply E_App1. apply IHt1; auto.
+
+    simpl in H. destruct (eval t1) eqn:IH1. inversion H; subst. apply E_If; apply IHt1; reflexivity.
+    destruct t1; inversion H; subst; try constructor.
+  -
+    induction H; eauto.
+    simpl. inversion H; subst; reflexivity.
+    simpl. rewrite IHstep.
+    destruct t1; try solve_by_invert; simpl; try reflexivity.
+    simpl. rewrite IHstep; inversion H; subst; simpl; destruct t2; try solve_by_invert; try reflexivity.
+    simpl. rewrite IHstep. reflexivity.
+Qed.
+
+Extraction "ocaml/str/src/eval.ml" typeof eval.
