@@ -278,3 +278,24 @@ Lemma leb_refl : forall n,
 Proof.
   induction n; auto. simpl. rewrite eqb_refl. reflexivity.
 Qed.
+
+Definition ltb n1 n2 :=
+  leb (S n1) n2.
+
+Lemma ltb_lt : forall n1 n2,
+    ltb n1 n2 = true <-> lt n1 n2.
+Proof.
+  unfold lt, ltb; split; intros; apply le_eq_leb; auto.
+Qed.
+
+Lemma lt_0_s_f : forall n,
+    ltb 0 (S n) = true.
+Proof.
+  induction n; auto.
+Qed.
+
+Lemma ltb_neq : forall n1 n2,
+    ltb n1 n2 = false <-> not (n1 < n2).
+Proof.
+  unfold ltb, lt. intros. apply leb_F.
+Qed.

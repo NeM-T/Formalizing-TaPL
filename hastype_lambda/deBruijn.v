@@ -677,11 +677,11 @@ end.
 Fixpoint subst (d : nat) (s t: term) : term :=
 match t with
 | Var x =>
-  match (leb d x, eqb_nat d x) with
-  | (true, false) => Var (pred x) (* x>d*)
-  | (_, true) => shift 0 d s (* x=d*)
-  | _ => Var x (* x<d*)
-  end
+  if eqb_nat d x then
+    shift 0 d s
+  else if ltb d x then
+         Var (pred x) else
+         Var x
 | Abs x T t' => Abs x T (subst (S d) s t')
 | App t1 t2 => App (subst d s t1) (subst d s t2)
 | Tru => Tru
@@ -814,17 +814,18 @@ Lemma L9_3_8: forall t s x Ts T ctx ctx',
     (ctx' ++ ctx) |- subst (length ctx') s t \in T.
 Proof.
   induction t; intros; inversion H; subst; clear H; try solve [econstructor; eauto]; simpl.
-  destruct leb eqn:IH1; destruct eqb_nat eqn:IH2; simpl; auto.
-  apply eqb_eq in IH2. apply shifting with (g2 := ctx') (g1:= []) in H0. simpl in H0.
-  subst. rewrite <- (plus_O_n (length ctx')) in H3. rewrite (app_getbind ctx' ( (x, Ts) :: ctx) 0) in H3.
+  destruct eqb_nat eqn:IHeq.
+  apply eqb_eq in IHeq; subst. apply shifting with (g2 := ctx') (g1:= []) in H0; simpl in H0.
+  rewrite <- (plus_O_n (length ctx')) in H3. rewrite (app_getbind ctx' ( (x, Ts) :: ctx) 0) in H3.
   simpl in H3. inversion H3; subst. apply H0.
-  apply le_leb in IH1. apply le_lt_or_eq in IH1. destruct IH1.
-  destruct n. inversion H. simpl. clear IH2. apply T_Var. clear H0.
-  eapply gb_lt_add in H; eauto.
+  destruct ltb eqn:IHlt. apply ltb_lt in IHlt.
+  destruct n. inversion IHlt. simpl. apply T_Var. clear H0.
+  eapply gb_lt_add in H3; eauto.
 
-  subst. rewrite eqb_refl in IH2; inversion IH2.
-  apply eqb_eq in IH2; subst. rewrite leb_refl in IH1. inversion IH1.
-  apply leb_neq in IH1. eapply length1_Some in IH1. apply T_Var. apply IH1. apply H3.
+  apply ltb_neq in IHlt. apply Nat.nlt_ge in IHlt. apply T_Var.
+  apply le_lt_or_eq in IHlt. destruct IHlt.
+  eapply length1_Some in H; eauto.
+  subst. rewrite eqb_refl in IHeq; inversion IHeq.
 
   apply T_Abs. apply (IHt s x Ts T2 ctx ((name, typ) :: ctx')) in H6. simpl in H6. apply H6.
   apply H0.
