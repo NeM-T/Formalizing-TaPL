@@ -5,6 +5,7 @@ From Coq Require Import Logic.FunctionalExtensionality.
 From Coq Require Import Lists.List.
 Import ListNotations.
 
+Notation eqb_eq_str := String.eqb_eq.
 Definition total_map (A : Type) := string -> A.
 
 Definition t_empty {A : Type} (v : A) : total_map A :=
@@ -298,4 +299,22 @@ Lemma ltb_neq : forall n1 n2,
     ltb n1 n2 = false <-> not (n1 < n2).
 Proof.
   unfold ltb, lt. intros. apply leb_F.
+Qed.
+
+Lemma leb_lt_eqb : forall n1 n2,
+    leb n1 n2 = true ->
+    eqb_nat n1 n2 = true \/ ltb n1 n2 = true.
+Proof.
+  intros. apply le_eq_leb in H; induction H.
+  left. apply eqb_refl. right.
+  unfold ltb, leb. destruct IHle. apply eqb_eq in H0; subst. rewrite eqb_refl. reflexivity.
+  destruct eqb_nat; auto.
+Qed.
+
+Lemma leb_neq_lt : forall n1 n2,
+    leb n1 n2 = true ->
+    eqb_nat n1 n2 = false ->
+    ltb n1 n2 = true.
+Proof.
+  intros. apply leb_lt_eqb in H. destruct H; auto. rewrite H in H0. inversion H0.
 Qed.

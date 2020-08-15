@@ -1,12 +1,12 @@
 Require Coq.extraction.Extraction.
 Require Import Ascii String Coq.Strings.Byte.
+From Coq Require Import Lists.List.
+Import ListNotations.
 Require Export ExtrOcamlChar.
 Extract Inductive bool => "bool" ["true" "false"].
 Extract Inductive string => "char list" [ "[]" "(::)" ].
-From Coq Require Import Lists.List.
 Extract Inductive list => "list" [ "[]" "(::)" ].
 Extraction Language OCaml.
-Import ListNotations.
 Load "../std".
 
 Inductive ty : Type :=
@@ -23,6 +23,11 @@ Inductive term : Type :=
 | Tru
 | Fls
 | If (t1 t2 t3: term).
+
+Inductive value : term -> Prop :=
+| V_tru : value Tru
+| V_fls : value Fls
+| V_abs :forall typ name t1, value (Abs typ name t1).
 
 Definition context : Type :=
   list (string * ty).
@@ -51,93 +56,6 @@ match t with
 | Abs _ _ _ => true
 | _ => false
 end.
-
-Inductive N : Type :=
-| P (n: nat)
-| M1.
-
-Fixpoint shift_walk c d t :=
-  match t with
-  | Var x =>
-    if leb c x then
-      match d with
-      | M1 =>
-        Var (x - 1)
-      | P d' =>
-        Var (x + d')
-      end
-    else
-      Var x
-  | Abs t x t1 =>
-    Abs t x (shift_walk (S c) d t1)
-  | App t1 t2 =>
-    App (shift_walk c d t1) (shift_walk c d t2)
-  | If t1 t2 t3 =>
-    If (shift_walk c d t1) (shift_walk c d t2) (shift_walk c d t3)
-  | _ => t
-  end.
-
-Notation shift d t := (shift_walk 0 d t).
-
-Fixpoint sub_walk j s c t :=
-  match t with
-  | Var x =>
-    let jc :=
-        match c with
-        | M1 => (j - 1)
-        | P c' => (j + c')
-        end
-    in
-    if eqb_nat x (jc) then
-      shift c s
-    else
-      Var x
-  | Abs t x t1 =>
-    let sc :=
-        match c with
-        | M1 => P 0
-        | P c' => P (c' + 1)
-        end
-    in
-    Abs t x (sub_walk j s sc t1)
-  | App t1 t2 =>
-    App (sub_walk j s c t1) (sub_walk j s c t2)
-  | If t1 t2 t3 =>
-    If (sub_walk j s c t1) (sub_walk j s c t2) (sub_walk j s c t3)
-  | _ => t
-  end.
-
-Notation sub j s t := (sub_walk j s (P 0) t).
-
-Notation subtop s t := (shift M1 (sub 0 (shift (P 1) s) t)).
-
-Inductive value : term -> Prop :=
-| V_tru : value Tru
-| V_fls : value Fls
-| V_abs :forall typ name t1, value (Abs typ name t1).
-
-
-Reserved Notation " t '-->' t' " (at level 40).
-Inductive step :term -> term -> Prop :=
-| E_IfTrue : forall t2 t3,
-    If Tru t2 t3 --> t2
-| E_IfFalse : forall t2 t3,
-    If Fls t2 t3 --> t3
-| E_If : forall t1 t1' t2 t3,
-    t1 --> t1' ->
-    If t1 t2 t3 --> If t1' t2 t3
-| E_App1 : forall t1 t2 t1',
-    t1 --> t1' ->
-    App t1 t2 --> App t1' t2
-| E_App2 : forall v1 t2 t2',
-    value v1 ->
-    t2 --> t2' ->
-    App v1 t2 --> App v1 t2'
-| E_AppAbs : forall typ str t12 t2,
-    value t2 ->
-    App (Abs typ str t12) t2 --> subtop t2 t12
-
-  where " t '-->' t' " := (step t t').
 
 Fixpoint eqb_ty (T1 T2: ty) : bool :=
   match (T1, T2) with
@@ -303,61 +221,6 @@ Proof.
 Qed.
 
 
-Lemma E9_3_2 :  forall n T,
-    not (exists ctx,ctx |- App (Var n) (Var n) \in T).
-Proof.
-  intros; intro. inversion H.
-  inversion H0; subst. inversion H4. inversion H6; subst.
-  rewrite H9 in H3. inversion H3. apply eqb_ty_eq in H2.
-  generalize H2. clear. generalize dependent T.
-  induction T11; intros. inversion H2. inversion H2. apply andb_prop in H0. inversion H0.
-  apply IHT11_1 in H. apply H.
-Qed.
-
-Lemma T9_3_3 : forall t1 ctx T1 T2,
-    ctx |- t1 \in T1 ->
-    ctx |- t1 \in T2 ->
-    T1 = T2.
-Proof.
-  induction t1; intros.
-  -
-    inversion H; inversion H0; subst. rewrite H3 in H7. inversion H7; reflexivity.
-  -
-    inversion H; inversion H0; subst.
-    apply eqb_ty_eq. simpl; apply andb_true_intro; split; auto.
-    clear. induction typ; auto. simpl. apply andb_true_intro. split; auto.
-    apply eqb_ty_eq. apply (IHt1 ( (name, typ) :: ctx) T3 T5); auto.
-  -
-    inversion H; inversion H0; subst.
-    apply IHt1_1 with (T2:= (T0 |--> T2)) in H4; auto.
-    inversion H4; reflexivity.
-  -
-    inversion H; inversion H0; subst; auto.
-  -
-    inversion H; inversion H0; subst; auto.
-  -
-    inversion H; inversion H0; subst; auto.
-    apply (IHt1_2 ctx T1 T2); auto.
-Qed.
-
-Lemma L9_3_4_bool : forall ctx v,
-    value v ->
-    ctx |- v \in Bool ->
-    v = Tru \/ v = Fls.
-Proof.
-  intros. inversion H0; subst. left; auto. right; auto.
-  inversion H. inversion H. inversion H.
-Qed.
-
-Lemma L9_3_4_Abs: forall ctx v T1 T2,
-    value v ->
-    ctx |- v \in (T1 |--> T2) ->
-    exists x t, v = Abs x T1 t.
-Proof.
-  intros. inversion H0; subst; try solve_by_invert.
-  exists x, t2. reflexivity.
-Qed.
-
 Lemma leb_0_T : forall n,
     leb 0 n = true.
 Proof.
@@ -415,6 +278,166 @@ Lemma cosed_type_nil : forall t T,
     closed t.
 Proof.
   intros. apply closed_hastype in H. simpl in H. apply H.
+Qed.
+
+Lemma app_getbind : forall ctx ctx' n,
+    getbinding (n + (length ctx)) (ctx ++ ctx') = getbinding n ctx'.
+Proof.
+  induction ctx; simpl; intros; auto.
+  rewrite <- plus_n_O; reflexivity.
+  rewrite <- plus_Snm_nSm. simpl. apply IHctx.
+Qed.
+
+Lemma length1_Some : forall n ctx ctx1 ctx2 T,
+    n < length ctx ->
+    getbinding n (ctx ++ ctx1) = Some T ->
+    getbinding n (ctx ++ ctx2) = Some T.
+Proof.
+  induction n; simpl; intros. destruct ctx. inversion H. simpl. simpl in H0. apply H0.
+  destruct ctx. inversion H. simpl. destruct ( (p :: ctx) ++ ctx1) eqn:IHH. inversion H0. inversion IHH; subst.
+  eapply IHn in H0. apply H0. simpl in H. apply lt_S_n in H. apply H.
+Qed.
+
+
+Module not_proof.
+
+Inductive N : Type :=
+| P (n: nat)
+| M1.
+
+Fixpoint shift_walk c d t :=
+  match t with
+  | Var x =>
+    if leb c x then
+      match d with
+      | M1 =>
+        Var (x - 1)
+      | P d' =>
+        Var (x + d')
+      end
+    else
+      Var x
+  | Abs t x t1 =>
+    Abs t x (shift_walk (S c) d t1)
+  | App t1 t2 =>
+    App (shift_walk c d t1) (shift_walk c d t2)
+  | If t1 t2 t3 =>
+    If (shift_walk c d t1) (shift_walk c d t2) (shift_walk c d t3)
+  | _ => t
+  end.
+
+Notation shift d t := (shift_walk 0 d t).
+
+Fixpoint sub_walk j s c t :=
+  match t with
+  | Var x =>
+    let jc :=
+        match c with
+        | M1 => (j - 1)
+        | P c' => (j + c')
+        end
+    in
+    if eqb_nat x (jc) then
+      shift c s
+    else
+      Var x
+  | Abs t x t1 =>
+    let sc :=
+        match c with
+        | M1 => P 0
+        | P c' => P (c' + 1)
+        end
+    in
+    Abs t x (sub_walk j s sc t1)
+  | App t1 t2 =>
+    App (sub_walk j s c t1) (sub_walk j s c t2)
+  | If t1 t2 t3 =>
+    If (sub_walk j s c t1) (sub_walk j s c t2) (sub_walk j s c t3)
+  | _ => t
+  end.
+
+Notation sub j s t := (sub_walk j s (P 0) t).
+
+Notation subtop s t := (shift M1 (sub 0 (shift (P 1) s) t)).
+
+
+Reserved Notation " t '-->' t' " (at level 40).
+Inductive step :term -> term -> Prop :=
+| E_IfTrue : forall t2 t3,
+    If Tru t2 t3 --> t2
+| E_IfFalse : forall t2 t3,
+    If Fls t2 t3 --> t3
+| E_If : forall t1 t1' t2 t3,
+    t1 --> t1' ->
+    If t1 t2 t3 --> If t1' t2 t3
+| E_App1 : forall t1 t2 t1',
+    t1 --> t1' ->
+    App t1 t2 --> App t1' t2
+| E_App2 : forall v1 t2 t2',
+    value v1 ->
+    t2 --> t2' ->
+    App v1 t2 --> App v1 t2'
+| E_AppAbs : forall typ str t12 t2,
+    value t2 ->
+    App (Abs typ str t12) t2 --> subtop t2 t12
+
+  where " t '-->' t' " := (step t t').
+
+
+
+Lemma E9_3_2 :  forall n T,
+    not (exists ctx,ctx |- App (Var n) (Var n) \in T).
+Proof.
+  intros; intro. inversion H.
+  inversion H0; subst. inversion H4. inversion H6; subst.
+  rewrite H9 in H3. inversion H3. apply eqb_ty_eq in H2.
+  generalize H2. clear. generalize dependent T.
+  induction T11; intros. inversion H2. inversion H2. apply andb_prop in H0. inversion H0.
+  apply IHT11_1 in H. apply H.
+Qed.
+
+Lemma T9_3_3 : forall t1 ctx T1 T2,
+    ctx |- t1 \in T1 ->
+    ctx |- t1 \in T2 ->
+    T1 = T2.
+Proof.
+  induction t1; intros.
+  -
+    inversion H; inversion H0; subst. rewrite H3 in H7. inversion H7; reflexivity.
+  -
+    inversion H; inversion H0; subst.
+    apply eqb_ty_eq. simpl; apply andb_true_intro; split; auto.
+    clear. induction typ; auto. simpl. apply andb_true_intro. split; auto.
+    apply eqb_ty_eq. apply (IHt1 ( (name, typ) :: ctx) T3 T5); auto.
+  -
+    inversion H; inversion H0; subst.
+    apply IHt1_1 with (T2:= (T0 |--> T2)) in H4; auto.
+    inversion H4; reflexivity.
+  -
+    inversion H; inversion H0; subst; auto.
+  -
+    inversion H; inversion H0; subst; auto.
+  -
+    inversion H; inversion H0; subst; auto.
+    apply (IHt1_2 ctx T1 T2); auto.
+Qed.
+
+Lemma L9_3_4_bool : forall ctx v,
+    value v ->
+    ctx |- v \in Bool ->
+    v = Tru \/ v = Fls.
+Proof.
+  intros. inversion H0; subst. left; auto. right; auto.
+  inversion H. inversion H. inversion H.
+Qed.
+
+Lemma L9_3_4_Abs: forall ctx v T1 T2,
+    value v ->
+    ctx |- v \in (T1 |--> T2) ->
+    exists x t, v = Abs x T1 t.
+Proof.
+  intros. inversion H0; subst; try solve_by_invert.
+  exists x, t2. reflexivity.
 Qed.
 
 Theorem T9_3_5 : forall t T,
@@ -478,24 +501,6 @@ Definition Minus1 n :=
     | S n => P n
     end.
 
-Lemma app_getbind : forall ctx ctx' n,
-    getbinding (n + (length ctx)) (ctx ++ ctx') = getbinding n ctx'.
-Proof.
-  induction ctx; simpl; intros; auto.
-  rewrite <- plus_n_O; reflexivity.
-  rewrite <- plus_Snm_nSm. simpl. apply IHctx.
-Qed.
-
-Lemma length1_Some : forall n ctx ctx1 ctx2 T,
-    n < length ctx ->
-    getbinding n (ctx ++ ctx1) = Some T ->
-    getbinding n (ctx ++ ctx2) = Some T.
-Proof.
-  induction n; simpl; intros. destruct ctx. inversion H. simpl. simpl in H0. apply H0.
-  destruct ctx. inversion H. simpl. destruct ( (p :: ctx) ++ ctx1) eqn:IHH. inversion H0. inversion IHH; subst.
-  eapply IHn in H0. apply H0. simpl in H. apply lt_S_n in H. apply H.
-Qed.
-
 Lemma shifting: forall t g g1 g2 T,
  (g1 ++ g) |- t \in T ->
  (g1 ++ g2 ++ g) |- (shift_walk  (length g1) (P (length g2)) t ) \in T.
@@ -530,6 +535,12 @@ Proof.
   rewrite IHt1, IHt2; reflexivity.
 
   rewrite IHt1, IHt2, IHt3; reflexivity.
+Qed.
+
+Lemma len_get : forall ctx' x T ctx,
+    getbinding (length ctx') (ctx' ++ (x, T) :: ctx) = Some T.
+Proof.
+  induction ctx'; intros; eauto. apply IHctx'.
 Qed.
 
 Lemma L9_3_8: forall t s x S T ctx,
@@ -653,13 +664,11 @@ Proof.
       destruct (eval t1) eqn:IH; destruct t1; try solve_by_invert; inversion H1; try (apply E_If; apply IHt1; reflexivity). apply E_IfTrue. apply E_IfFalse.
 Qed.
 
-Extraction "./ocaml/deBruijin/src/eval" typeof eval.
+End not_proof.
 
 
 
 (**)
-Module not_minus_app.
-
 Fixpoint shift (d k : nat) (t : term) : term :=
 match t with
 | Var x =>
@@ -848,4 +857,4 @@ Proof.
     apply (L9_3_8 t12 t2 typ T11 T ctx []) in H2; eauto.
 Qed.
 
-End not_minus_app.
+Extraction "./ocaml/deBruijin/src/eval" typeof eval.
