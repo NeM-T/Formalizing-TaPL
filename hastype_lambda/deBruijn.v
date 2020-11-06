@@ -280,7 +280,7 @@ Proof.
   intros. apply closed_hastype in H. simpl in H. apply H.
 Qed.
 
-Lemma app_getbind : forall ctx ctx' n,
+Lemma appGetbind : forall ctx ctx' n,
     getbinding (n + (length ctx)) (ctx ++ ctx') = getbinding n ctx'.
 Proof.
   induction ctx; simpl; intros; auto.
@@ -298,6 +298,206 @@ Proof.
   eapply IHn in H0. apply H0. simpl in H. apply lt_S_n in H. apply H.
 Qed.
 
+
+(**)
+Fixpoint shift (d k : nat) (t : term) : term :=
+match t with
+| Var x =>
+  Var (if leb d x then x + k else x)
+| Abs x T t' =>
+  Abs x T (shift (S d) k t')
+| App t1 t2 =>
+  App (shift d k t1) (shift d k t2)
+| Tru => Tru
+| Fls => Fls
+| If t1 t2 t3 =>
+  If (shift d k t1) (shift d k t2) (shift d k t3)
+end.
+
+Fixpoint subst (d : nat) (s t: term) : term :=
+match t with
+| Var x =>
+  if eqb_nat d x then (*d == x*)
+    shift 0 d s
+  else if ltb d x then (*d < x*)
+         Var (pred x) else
+         Var x (*d > x*)
+| Abs x T t' => Abs x T (subst (S d) s t')
+| App t1 t2 => App (subst d s t1) (subst d s t2)
+| Tru => Tru
+| Fls => Fls
+| If t1 t2 t3 =>
+  If (subst d s t1) (subst d s t2) (subst d s t3)
+end.
+
+Fixpoint eval (t: term) :=
+  match t with
+  | If t1 t2 t3 =>
+    match t1 with
+    | Tru => Some t2
+    | Fls => Some t3
+    | _ => match eval t1 with
+          | Some t1' =>
+            Some (If t1' t2 t3)
+          | None => None
+          end
+    end
+  | App t1 t2 =>
+    if isval t1 then
+      if isval t2 then
+        match t1 with
+        | Abs _ _ t12 => Some (subst 0 t2 t12)
+        | _ => None
+        end
+      else
+        match eval t2 with
+        | Some t2' => Some (App t1 t2')
+        | None => None
+        end
+    else
+      match eval t1 with
+      | Some t1' => Some (App t1' t2)
+      | None => None
+      end
+  | _ => None
+  end.
+
+Compute (shift 0 1 (Abs _ _ (Var 1))).
+Compute (subst 0 (App (Var 1) (Abs _ _ (Var 2))) (shift 1 1 (App (Var 0) (Abs _ _ (Var 1))))).
+Compute (eval (App (Abs _ _ (App (Var 1) (App (Var 0) (Var 2)))) (Abs _ _ (Var 0)))).
+
+(* (λ x. x)  λ y. y => λ y. y *)
+Compute (eval (App (Abs "x" _ (Var 0)) (Abs "y" _ (Var 0)))).
+(* TmAbs("y", TmVar(0, 1)) *)
+
+(* (λ x. λ y. x) λ z. z => λ y. λ z. z *)
+Compute (eval (App (Abs "x" _ (Abs "y" _ (Var 1))) (Abs "z" _ (Var 0)))).
+ (* TmAbs("y", TmAbs("z", TmVar(0, 2))) *)
+
+(* (λ x. λ x'. x) (λ x. x) => λ x'. λ x. x *)
+Compute (eval (App (Abs "x" _ (Abs "x" _ (Var 1))) (Abs "x" _ (Var 0)))).
+ (* TmAbs("x", TmAbs("x", TmVar(0, 2))) *)
+
+(* (λ x. λ y. x) (λ z. z) (λ w. w) => (λ y. λ z. z) (λ w. w) *)
+Compute (eval (App (App (Abs "x" _ (Abs "y" _ (Var 1))) (Abs "z" _ (Var 0))) (Abs "w" _ (Var 0)))).
+(* TmApp(TmAbs("y", TmAbs("z", TmVar(0, 2))), TmAbs("w", TmVar(0, 1))) *)
+
+(* (λ x. x) ((λ y. y) (λ z. z))  => (λ x. x) (λ z. z) *)
+Compute (eval (App (Abs "x" _ (Var 0)) (App (Abs "y" _ (Var 0)) (Abs "z" _ (Var 0))))).
+(* TmApp(TmAbs("x", TmVar(0, 1)), TmAbs("z", TmVar(0, 1))) *)
+
+(* (λ x. x x) (λ x. x x) => (λ x. x x) (λ x. x x) *)
+Compute (eval (App (Abs "x" _ (App (Var 0) (Var 0))) (Abs "x" _ (App (Var 0) (Var 0))))).
+ (* TmApp(TmAbs("x", TmApp(TmVar(0, 1), TmVar(0, 1))), TmAbs("x", TmApp(TmVar(0, 1), TmVar(0, 1))) *)
+
+Reserved Notation " t '-->' t' " (at level 40).
+Inductive step :term -> term -> Prop :=
+| E_IfTrue : forall t2 t3,
+    If Tru t2 t3 --> t2
+| E_IfFalse : forall t2 t3,
+    If Fls t2 t3 --> t3
+| E_If : forall t1 t1' t2 t3,
+    t1 --> t1' ->
+    If t1 t2 t3 --> If t1' t2 t3
+| E_App1 : forall t1 t2 t1',
+    t1 --> t1' ->
+    App t1 t2 --> App t1' t2
+| E_App2 : forall v1 t2 t2',
+    value v1 ->
+    t2 --> t2' ->
+    App v1 t2 --> App v1 t2'
+| E_AppAbs : forall typ str t12 t2,
+    value t2 ->
+    App (Abs typ str t12) t2 --> subst 0 t2 t12
+
+  where " t '-->' t' " := (step t t').
+
+Lemma shift0 : forall t n,
+    shift n 0 t = t.
+Proof.
+  induction t; intros; simpl; eauto.
+  rewrite <- plus_n_O. destruct leb; reflexivity.
+
+  rewrite IHt; reflexivity.
+  rewrite IHt1, IHt2; reflexivity.
+  rewrite IHt1, IHt2, IHt3; reflexivity.
+Qed.
+
+Lemma shifting : forall t g g1 g2 T,
+  (g1 ++ g) |- t \in T ->
+  (g1 ++ g2 ++ g) |- (shift (length g1) (length g2) t) \in T.
+Proof.
+  induction t; intros; inversion H; subst; clear H; try solve [econstructor; eauto]; simpl.
+
+  apply T_Var. destruct (leb) eqn:IH. apply le_leb in IH.
+  generalize dependent g. generalize dependent T. generalize dependent n.
+  induction g1; simpl; intros; eauto. rewrite appGetbind. apply H2.
+  destruct n. inversion IH. simpl.
+  apply le_S_n in IH. simpl in H2. eapply IHg1 in IH; eauto.
+
+  apply leb_neq in IH. eapply length1_Some in IH. apply IH. apply H2.
+
+  apply T_Abs.
+  assert (S (length g1) = length ((name, typ) :: g1)). reflexivity.
+  rewrite H. apply IHt with (g1:= ((name, typ) :: g1)). apply H5.
+Qed.
+
+Lemma gb_lt_add : forall ctx ctx' p T n,
+  getbinding (S n) (ctx' ++ p :: ctx) = Some T ->
+  length ctx' < S n ->
+  getbinding n (ctx' ++ ctx) = Some T.
+Proof.
+  induction ctx'; simpl; intros; eauto.
+  destruct n. inversion H0; subst. apply leb_le in H2; inversion H2.
+  apply IHctx' in H. simpl. apply H. apply lt_S_n. apply H0.
+Qed.
+
+Lemma L9_3_8: forall t s x Ts T ctx ctx',
+    (ctx' ++ (x, Ts) :: ctx) |- t \in T ->
+    ctx |- s \in Ts ->
+    (ctx' ++ ctx) |- subst (length ctx') s t \in T.
+Proof.
+  induction t; intros; inversion H; subst; clear H; try solve [econstructor; eauto]; simpl.
+  destruct eqb_nat eqn:IHeq.
+  apply eqb_eq in IHeq; subst. apply shifting with (g2 := ctx') (g1:= []) in H0; simpl in H0.
+  rewrite <- (plus_O_n (length ctx')) in H3. rewrite (appGetbind ctx' ( (x, Ts) :: ctx) 0) in H3.
+  simpl in H3. inversion H3; subst. apply H0.
+  destruct ltb eqn:IHlt. apply ltb_lt in IHlt.
+  destruct n. inversion IHlt. simpl. apply T_Var. clear H0.
+  eapply gb_lt_add in H3; eauto.
+
+  apply ltb_neq in IHlt. apply Nat.nlt_ge in IHlt. apply T_Var.
+  apply le_lt_or_eq in IHlt. destruct IHlt.
+  eapply length1_Some in H; eauto.
+  subst. rewrite eqb_refl in IHeq; inversion IHeq.
+
+  apply T_Abs. apply (IHt s x Ts T2 ctx ((name, typ) :: ctx')) in H6. simpl in H6. apply H6.
+  apply H0.
+Qed.
+
+Theorem T9_3_9 : forall t t' T ctx,
+    ctx |- t \in T ->
+    t --> t' ->
+    ctx |- t' \in T.
+Proof.
+  intros. generalize dependent T. induction H0; subst; simpl; intros; try solve [inversion H; subst; eauto].
+  -
+    inversion H; subst. apply IHstep in H5. apply T_If; auto.
+  -
+    inversion H; subst. apply IHstep in H4. apply T_App with T11; auto.
+  -
+    inversion H1; subst. apply IHstep in H7. apply T_App with T11; auto.
+  -
+    inversion H0; subst. clear H0. inversion H4; subst.
+    apply (L9_3_8 t12 t2 typ T11 T ctx []) in H2; eauto.
+Qed.
+
+Extraction "./ocaml/deBruijin/src/eval" typeof eval.
+
+Compute (subst 0 (Var 1) (shift 1 1 (App (Var 0) (Abs _ _ (Abs _ _ (Var 2)))))).
+Compute (subst 0 (App (Var 1) (Abs _ _ (Var 2))) (shift 1 1 (App (Var 0) (Abs _ _ (Var 1))))).
+Compute (subst 0 (Var 1) (shift 1 1 (Abs _ _ (App (Var 0) (Var 2))))).
+Compute (subst 0 (Var 1) (shift 1 1 (Abs _ _  (App (Var 1) (Var 0))))).
 
 Module not_proof.
 
@@ -509,7 +709,7 @@ Proof.
 
   destruct leb eqn:IH. apply T_Var.
   clear H. generalize dependent g. generalize dependent T. generalize dependent n.
-  induction g1; simpl; intros; eauto. rewrite app_getbind. apply H2.
+  induction g1; simpl; intros; eauto. rewrite appGetbind. apply H2.
   destruct n. inversion IH.
   simpl. apply le_leb in IH. apply le_S_n in IH. apply leb_le in IH. simpl in H2. eapply IHg1 in IH; eauto.
 
@@ -665,196 +865,3 @@ Proof.
 Qed.
 
 End not_proof.
-
-
-
-(**)
-Fixpoint shift (d k : nat) (t : term) : term :=
-match t with
-| Var x =>
-  Var (if leb d x then x + k else x)
-| Abs x T t' =>
-  Abs x T (shift (S d) k t')
-| App t1 t2 =>
-  App (shift d k t1) (shift d k t2)
-| Tru => Tru
-| Fls => Fls
-| If t1 t2 t3 =>
-  If (shift d k t1) (shift d k t2) (shift d k t3)
-end.
-
-Fixpoint subst (d : nat) (s t: term) : term :=
-match t with
-| Var x =>
-  if eqb_nat d x then
-    shift 0 d s
-  else if ltb d x then
-         Var (pred x) else
-         Var x
-| Abs x T t' => Abs x T (subst (S d) s t')
-| App t1 t2 => App (subst d s t1) (subst d s t2)
-| Tru => Tru
-| Fls => Fls
-| If t1 t2 t3 =>
-  If (subst d s t1) (subst d s t2) (subst d s t3)
-end.
-
-Fixpoint eval (t: term) :=
-  match t with
-  | If t1 t2 t3 =>
-    match t1 with
-    | Tru => Some t2
-    | Fls => Some t3
-    | _ => match eval t1 with
-          | Some t1' =>
-            Some (If t1' t2 t3)
-          | None => None
-          end
-    end
-  | App t1 t2 =>
-    if isval t1 then
-      if isval t2 then
-        match t1 with
-        | Abs _ _ t12 => Some (subst 0 t2 t12)
-        | _ => None
-        end
-      else
-        match eval t2 with
-        | Some t2' => Some (App t1 t2')
-        | None => None
-        end
-    else
-      match eval t1 with
-      | Some t1' => Some (App t1' t2)
-      | None => None
-      end
-  | _ => None
-  end.
-
-(* (λ x. x)  λ y. y => λ y. y *)
-Compute (eval (App (Abs "x" _ (Var 0)) (Abs "y" _ (Var 0)))).
-(* TmAbs("y", TmVar(0, 1)) *)
-
-(* (λ x. λ y. x) λ z. z => λ y. λ z. z *)
-Compute (eval (App (Abs "x" _ (Abs "y" _ (Var 1))) (Abs "z" _ (Var 0)))).
- (* TmAbs("y", TmAbs("z", TmVar(0, 2))) *)
-
-(* (λ x. λ x'. x) (λ x. x) => λ x'. λ x. x *)
-Compute (eval (App (Abs "x" _ (Abs "x" _ (Var 1))) (Abs "x" _ (Var 0)))).
- (* TmAbs("x", TmAbs("x", TmVar(0, 2))) *)
-
-(* (λ x. λ y. x) (λ z. z) (λ w. w) => (λ y. λ z. z) (λ w. w) *)
-Compute (eval (App (App (Abs "x" _ (Abs "y" _ (Var 1))) (Abs "z" _ (Var 0))) (Abs "w" _ (Var 0)))).
-(* TmApp(TmAbs("y", TmAbs("z", TmVar(0, 2))), TmAbs("w", TmVar(0, 1))) *)
-
-(* (λ x. x) ((λ y. y) (λ z. z))  => (λ x. x) (λ z. z) *)
-Compute (eval (App (Abs "x" _ (Var 0)) (App (Abs "y" _ (Var 0)) (Abs "z" _ (Var 0))))).
-(* TmApp(TmAbs("x", TmVar(0, 1)), TmAbs("z", TmVar(0, 1))) *)
-
-(* (λ x. x x) (λ x. x x) => (λ x. x x) (λ x. x x) *)
-Compute (eval (App (Abs "x" _ (App (Var 0) (Var 0))) (Abs "x" _ (App (Var 0) (Var 0))))).
- (* TmApp(TmAbs("x", TmApp(TmVar(0, 1), TmVar(0, 1))), TmAbs("x", TmApp(TmVar(0, 1), TmVar(0, 1))) *)
-
-Reserved Notation " t '-->' t' " (at level 40).
-Inductive step :term -> term -> Prop :=
-| E_IfTrue : forall t2 t3,
-    If Tru t2 t3 --> t2
-| E_IfFalse : forall t2 t3,
-    If Fls t2 t3 --> t3
-| E_If : forall t1 t1' t2 t3,
-    t1 --> t1' ->
-    If t1 t2 t3 --> If t1' t2 t3
-| E_App1 : forall t1 t2 t1',
-    t1 --> t1' ->
-    App t1 t2 --> App t1' t2
-| E_App2 : forall v1 t2 t2',
-    value v1 ->
-    t2 --> t2' ->
-    App v1 t2 --> App v1 t2'
-| E_AppAbs : forall typ str t12 t2,
-    value t2 ->
-    App (Abs typ str t12) t2 --> subst 0 t2 t12
-
-  where " t '-->' t' " := (step t t').
-
-Lemma shift0 : forall t n,
-    shift n 0 t = t.
-Proof.
-  induction t; intros; simpl; eauto.
-  rewrite <- plus_n_O. destruct leb; reflexivity.
-
-  rewrite IHt; reflexivity.
-  rewrite IHt1, IHt2; reflexivity.
-  rewrite IHt1, IHt2, IHt3; reflexivity.
-Qed.
-
-Lemma shifting : forall t g g1 g2 T,
-  (g1 ++ g) |- t \in T ->
-  (g1 ++ g2 ++ g) |- (shift (length g1) (length g2) t) \in T.
-Proof.
-  induction t; intros; inversion H; subst; clear H; try solve [econstructor; eauto]; simpl.
-
-  apply T_Var. destruct (leb) eqn:IH. apply le_leb in IH.
-  generalize dependent g. generalize dependent T. generalize dependent n.
-  induction g1; simpl; intros; eauto. rewrite app_getbind. apply H2.
-  destruct n. inversion IH. simpl.
-  apply le_S_n in IH. simpl in H2. eapply IHg1 in IH; eauto.
-
-  apply leb_neq in IH. eapply length1_Some in IH. apply IH. apply H2.
-
-  apply T_Abs.
-  assert (S (length g1) = length ((name, typ) :: g1)). reflexivity.
-  rewrite H. apply IHt with (g1:= ((name, typ) :: g1)). apply H5.
-Qed.
-
-Lemma gb_lt_add : forall ctx ctx' p T n,
-  getbinding (S n) (ctx' ++ p :: ctx) = Some T ->
-  length ctx' < S n ->
-  getbinding n (ctx' ++ ctx) = Some T.
-Proof.
-  induction ctx'; simpl; intros; eauto.
-  destruct n. inversion H0; subst. apply leb_le in H2; inversion H2.
-  apply IHctx' in H. simpl. apply H. apply lt_S_n. apply H0.
-Qed.
-
-Lemma L9_3_8: forall t s x Ts T ctx ctx',
-    (ctx' ++ (x, Ts) :: ctx) |- t \in T ->
-    ctx |- s \in Ts ->
-    (ctx' ++ ctx) |- subst (length ctx') s t \in T.
-Proof.
-  induction t; intros; inversion H; subst; clear H; try solve [econstructor; eauto]; simpl.
-  destruct eqb_nat eqn:IHeq.
-  apply eqb_eq in IHeq; subst. apply shifting with (g2 := ctx') (g1:= []) in H0; simpl in H0.
-  rewrite <- (plus_O_n (length ctx')) in H3. rewrite (app_getbind ctx' ( (x, Ts) :: ctx) 0) in H3.
-  simpl in H3. inversion H3; subst. apply H0.
-  destruct ltb eqn:IHlt. apply ltb_lt in IHlt.
-  destruct n. inversion IHlt. simpl. apply T_Var. clear H0.
-  eapply gb_lt_add in H3; eauto.
-
-  apply ltb_neq in IHlt. apply Nat.nlt_ge in IHlt. apply T_Var.
-  apply le_lt_or_eq in IHlt. destruct IHlt.
-  eapply length1_Some in H; eauto.
-  subst. rewrite eqb_refl in IHeq; inversion IHeq.
-
-  apply T_Abs. apply (IHt s x Ts T2 ctx ((name, typ) :: ctx')) in H6. simpl in H6. apply H6.
-  apply H0.
-Qed.
-
-Theorem T9_3_9 : forall t t' T ctx,
-    ctx |- t \in T ->
-    t --> t' ->
-    ctx |- t' \in T.
-Proof.
-  intros. generalize dependent T. induction H0; subst; simpl; intros; try solve [inversion H; subst; eauto].
-  -
-    inversion H; subst. apply IHstep in H5. apply T_If; auto.
-  -
-    inversion H; subst. apply IHstep in H4. apply T_App with T11; auto.
-  -
-    inversion H1; subst. apply IHstep in H7. apply T_App with T11; auto.
-  -
-    inversion H0; subst. clear H0. inversion H4; subst.
-    apply (L9_3_8 t12 t2 typ T11 T ctx []) in H2; eauto.
-Qed.
-
-Extraction "./ocaml/deBruijin/src/eval" typeof eval.
