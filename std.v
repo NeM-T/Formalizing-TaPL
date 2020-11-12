@@ -318,3 +318,65 @@ Lemma leb_neq_lt : forall n1 n2,
 Proof.
   intros. apply leb_lt_eqb in H. destruct H; auto. rewrite H in H0. inversion H0.
 Qed.
+
+Lemma ltb_to_leb : forall n1 n2,
+    ltb n1 n2 = true ->
+    leb n1 n2 = true.
+Proof.
+  intros. apply ltb_lt in H. induction H; simpl; destruct eqb_nat; auto.
+  rewrite leb_refl; reflexivity.
+Qed.
+
+Fixpoint my_nth {A: Type} n (l: list A) :=
+  match n with
+  | 0 =>
+    match l with
+    | [] => None
+    | a :: ctx' => Some a
+    end
+  | S n' =>
+    match l with
+    | [] => None
+    | x :: ctx' => my_nth n' ctx'
+    end
+  end.
+
+Lemma len_eq_none : forall A (ctx: list A),
+    my_nth (length ctx) ctx = None.
+Proof.
+  induction ctx; auto.
+Qed.
+
+Lemma leb_len_none : forall A n (ctx: list A),
+    leb (length ctx) n = true ->
+    my_nth n ctx = None.
+Proof.
+  induction n; intros; auto.
+  destruct ctx; auto. simpl in H. inversion H.
+  destruct ctx. simpl. reflexivity.
+  simpl. apply IHn. apply leb_le. apply le_S_n. apply le_leb. apply H.
+Qed.
+
+Lemma app_getbind : forall A (ctx ctx': list A) n,
+    my_nth (n + (length ctx)) (ctx ++ ctx') = my_nth n ctx'.
+Proof.
+  induction ctx; simpl; intros; auto.
+  rewrite <- plus_n_O; reflexivity.
+  rewrite <- plus_Snm_nSm. simpl. apply IHctx.
+Qed.
+
+Lemma lt_len_Someapp : forall A n (ctx ctx1 ctx2: list A) T,
+    n < length ctx ->
+    my_nth n (ctx ++ ctx1) = Some T ->
+    my_nth n (ctx ++ ctx2) = Some T.
+Proof.
+  induction n; simpl; intros. destruct ctx. inversion H. simpl. simpl in H0. apply H0.
+  destruct ctx. inversion H. simpl. destruct ( (a :: ctx) ++ ctx1) eqn:IHH. inversion H0. inversion IHH; subst.
+  eapply IHn in H0. apply H0. simpl in H. apply lt_S_n in H. apply H.
+Qed.
+
+Lemma len_app_a : forall A (ctx ctx': list A) a,
+    my_nth (length ctx) (ctx ++ a :: ctx') = Some a.
+Proof.
+  induction ctx; auto.
+Qed.
