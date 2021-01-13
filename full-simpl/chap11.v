@@ -7,6 +7,7 @@ From Coq Require Import Lists.List.
 Extract Inductive list => "list" [ "[]" "(::)" ].
 Extraction Language OCaml.
 Import ListNotations.
+Load "../std".
 
 Module deBruijin.
 
@@ -62,23 +63,6 @@ Lemma eq_type_refl : forall T,
 Proof.
   induction T; simpl; auto. rewrite IHT1, IHT2; auto.
 Qed.
-
-Definition context := list (string * ty).
-Definition eqb_string s1 s2:= String.eqb s1 s2.
-
-Fixpoint getbinding (n : nat) (ctx: context) :=
-  match n with
-  | 0 =>
-    match ctx with
-    | [] => None
-    | (x, t) :: ctx' => Some t
-    end
-  | S n' =>
-    match ctx with
-    | [] => None
-    | x :: ctx' => getbinding n' ctx'
-    end
-  end.
 
 Fixpoint shift (d : nat) (t : term) : term :=
 match t with
@@ -441,18 +425,6 @@ Proof.
     compute. apply le_n_S. apply le_0_n.
 Qed.    
 
-Ltac solve_by_inverts n :=
-  match goal with | H : ?T |- _ =>
-  match type of T with Prop =>
-    solve [
-      inversion H;
-      match n with S (S (?n')) => subst; solve_by_inverts (S n') end ]
-  end end.
-
-Ltac solve_by_invert :=
-  solve_by_inverts 1.
-
-
 Theorem T11_3_1_1_1 : forall t' t'',
   t' -->e t'' ->
   (e2t t') -->i (e2t t'').
@@ -513,6 +485,23 @@ Proof.
       exists t2. split; try constructor; auto. apply sub_shift. destruct t1; try solve_by_invert; constructor.
 Qed.
 
+Definition context := list (string * ty).
+Definition eqb_string s1 s2:= String.eqb s1 s2.
+
+Fixpoint getbinding (n : nat) (ctx: context) :=
+  match n with
+  | 0 =>
+    match ctx with
+    | [] => None
+    | (x, t) :: ctx' => Some t
+    end
+  | S n' =>
+    match ctx with
+    | [] => None
+    | x :: ctx' => getbinding n' ctx'
+    end
+  end.
+
 Reserved Notation "ctx '|-' t '\in' T" (at level 40).
 Inductive has_type : context -> term -> ty -> Prop :=
 | T_True: forall ctx,
@@ -561,6 +550,47 @@ Proof.
   eapply IHn in H0. apply H0. simpl in H. apply Lt.lt_S_n in H. apply H.
 Qed.
 
+Lemma shifting : forall t g g1 a T,
+  (g1 ++ g) |- t \in T ->
+  (g1 ++ (a :: g)) |- (shift (length g1) t) \in T.
+Proof.
+  induction t; intros; inversion H; subst; clear H; try solve [econstructor; eauto]; simpl.
+
+  apply T_Var. destruct (leb) eqn:IH. apply Nat.leb_le in IH.
+  generalize dependent g. generalize dependent T. generalize dependent n.
+  induction g1; simpl; intros; eauto.
+
+  destruct n. inversion IH. simpl.
+  apply le_S_n in IH. simpl in H2. eapply IHg1 in IH; eauto.
+
+  apply Nat.leb_gt in IH. eapply length1_Some in IH. apply IH. apply H2.
+
+  apply T_Abs.
+  assert (S (length g1) = length ((name, typ) :: g1)). reflexivity.
+  rewrite H. apply IHt with (g1:= ((name, typ) :: g1)). apply H5.
+Qed.
+
+Lemma shifting_rev : forall t g g1 a T,
+  (g1 ++ (a :: g)) |- (shift (length g1) t) \in T ->
+  (g1 ++ g) |- t \in T.
+Proof.
+  induction t; intros; inversion H; subst; clear H; try solve [econstructor; eauto]; simpl.
+  -
+    destruct leb eqn:IH1. apply Nat.leb_le in IH1.
+    apply T_Var.
+    generalize dependent g. generalize dependent T. generalize dependent n.
+    induction g1; simpl; intros; eauto.
+
+    destruct n. inversion IH1. simpl. apply IHg1; auto. apply le_S_n. apply IH1.
+
+    apply Nat.leb_gt in IH1.
+    apply length1_Some with (ctx := g1) (ctx1 := a:: g) (ctx2 :=g) in H2; auto. apply T_Var.
+    apply H2.
+  -
+    apply T_Abs. apply IHt with (g1:= (name,typ) :: g1) in H5. simpl in H5.
+    apply H5.
+Qed.
+    
 Theorem T11_3_1_2 : forall t1 T ctx,
     ctx |- t1 \in T <->
     ctx |- (e2t t1) \in T.
@@ -570,13 +600,15 @@ Proof.
     induction t1; simpl; intros; auto; inversion H; subst; try solve [econstructor; eauto].
     +
       econstructor; eauto. constructor; auto.
-      admit.
+      apply shifting with (g1 := []).
+      simpl. apply IHt1_2. apply H5.
   -
     induction t1; simpl; intros; auto; inversion H; subst; try solve [econstructor; eauto].
     inversion H3; subst.
     constructor; eauto.
-    admit.
-Abort.
+    apply IHt1_2.
+    apply shifting_rev with (g1:= nil) in H2. simpl in H2. apply H2.
+Qed.
 
 End E11_1.
 
