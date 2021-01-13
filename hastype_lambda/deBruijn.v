@@ -222,7 +222,7 @@ Qed.
 
 
 Lemma leb_0_T : forall n,
-    leb 0 n = true.
+    Nat.leb 0 n = true.
 Proof.
   induction n; auto.
 Qed.
@@ -230,7 +230,7 @@ Qed.
 Fixpoint in_free t n :=
   match t with
   | Var n1 =>
-    if leb n n1 then
+    if Nat.leb n n1 then
       true
     else
       false
@@ -253,15 +253,16 @@ Proof.
 Qed.
 
 Lemma var_hastype_none_succ : forall n ctx,
-    leb (length ctx) n = true ->
+    Nat.leb (length ctx) n = true ->
     getbinding n ctx = None.
 Proof.
   induction n; intros; auto.
   destruct ctx; auto. simpl in H. inversion H.
   destruct ctx. simpl. reflexivity.
-  simpl. apply IHn. apply leb_le. apply le_S_n. apply le_leb. apply H.
+  simpl. apply IHn. apply Nat.leb_le. apply le_S_n. apply Nat.leb_le. apply H.
 Qed.
 
+Require Import Nat.
 Lemma closed_hastype : forall t T ctx,
     ctx |- t \in T ->
     in_free t (length ctx) = false.
@@ -317,7 +318,7 @@ end.
 Fixpoint subst (d : nat) (s t: term) : term :=
 match t with
 | Var x =>
-  if eqb_nat d x then (*d == x*)
+  if eqb d x then (*d == x*)
     shift 0 d s
   else if ltb d x then (*d < x*)
          Var (pred x) else
@@ -429,13 +430,13 @@ Lemma shifting : forall t g g1 g2 T,
 Proof.
   induction t; intros; inversion H; subst; clear H; try solve [econstructor; eauto]; simpl.
 
-  apply T_Var. destruct (leb) eqn:IH. apply le_leb in IH.
+  apply T_Var. destruct (leb) eqn:IH. apply Nat.leb_le in IH.
   generalize dependent g. generalize dependent T. generalize dependent n.
   induction g1; simpl; intros; eauto. rewrite appGetbind. apply H2.
   destruct n. inversion IH. simpl.
   apply le_S_n in IH. simpl in H2. eapply IHg1 in IH; eauto.
 
-  apply leb_neq in IH. eapply length1_Some in IH. apply IH. apply H2.
+  apply Nat.leb_gt in IH. eapply length1_Some in IH. apply IH. apply H2.
 
   apply T_Abs.
   assert (S (length g1) = length ((name, typ) :: g1)). reflexivity.
@@ -448,7 +449,7 @@ Lemma gb_lt_add : forall ctx ctx' p T n,
   getbinding n (ctx' ++ ctx) = Some T.
 Proof.
   induction ctx'; simpl; intros; eauto.
-  destruct n. inversion H0; subst. apply leb_le in H2; inversion H2.
+  destruct n. inversion H0; subst. apply Nat.leb_le in H2; inversion H2.
   apply IHctx' in H. simpl. apply H. apply lt_S_n. apply H0.
 Qed.
 
@@ -458,18 +459,18 @@ Lemma L9_3_8: forall t s x Ts T ctx ctx',
     (ctx' ++ ctx) |- subst (length ctx') s t \in T.
 Proof.
   induction t; intros; inversion H; subst; clear H; try solve [econstructor; eauto]; simpl.
-  destruct eqb_nat eqn:IHeq.
-  apply eqb_eq in IHeq; subst. apply shifting with (g2 := ctx') (g1:= []) in H0; simpl in H0.
+  destruct eqb eqn:IHeq.
+  apply Nat.eqb_eq in IHeq; subst. apply shifting with (g2 := ctx') (g1:= []) in H0; simpl in H0.
   rewrite <- (plus_O_n (length ctx')) in H3. rewrite (appGetbind ctx' ( (x, Ts) :: ctx) 0) in H3.
   simpl in H3. inversion H3; subst. apply H0.
-  destruct ltb eqn:IHlt. apply ltb_lt in IHlt.
+  destruct ltb eqn:IHlt. apply Nat.ltb_lt in IHlt.
   destruct n. inversion IHlt. simpl. apply T_Var. clear H0.
   eapply gb_lt_add in H3; eauto.
 
-  apply ltb_neq in IHlt. apply Nat.nlt_ge in IHlt. apply T_Var.
+  apply Nat.ltb_ge in IHlt. apply T_Var.
   apply le_lt_or_eq in IHlt. destruct IHlt.
   eapply length1_Some in H; eauto.
-  subst. rewrite eqb_refl in IHeq; inversion IHeq.
+  subst. rewrite Nat.eqb_refl in IHeq; inversion IHeq.
 
   apply T_Abs. apply (IHt s x Ts T2 ctx ((name, typ) :: ctx')) in H6. simpl in H6. apply H6.
   apply H0.
@@ -537,7 +538,7 @@ Fixpoint sub_walk j s c t :=
         | P c' => (j + c')
         end
     in
-    if eqb_nat x (jc) then
+    if eqb x (jc) then
       shift c s
     else
       Var x
@@ -684,7 +685,7 @@ Lemma shift_m1_p1_refl : forall t n,
 Proof.
   induction t; intros; simpl; auto.
   -
-    destruct (leb n0 n) eqn:IH. simpl. apply le_leb in IH. apply PeanoNat.Nat.le_le_succ_r in IH. apply leb_le in IH. rewrite PeanoNat.Nat.add_1_r. rewrite IH. simpl. rewrite PeanoNat.Nat.sub_0_r. reflexivity.
+    destruct (leb n0 n) eqn:IH. simpl. apply Nat.leb_le in IH. apply PeanoNat.Nat.le_le_succ_r in IH. apply Nat.leb_le in IH. rewrite PeanoNat.Nat.add_1_r. rewrite IH. simpl. rewrite PeanoNat.Nat.sub_0_r. reflexivity.
 
     simpl. rewrite IH. reflexivity.
   -
@@ -711,9 +712,9 @@ Proof.
   clear H. generalize dependent g. generalize dependent T. generalize dependent n.
   induction g1; simpl; intros; eauto. rewrite appGetbind. apply H2.
   destruct n. inversion IH.
-  simpl. apply le_leb in IH. apply le_S_n in IH. apply leb_le in IH. simpl in H2. eapply IHg1 in IH; eauto.
+  simpl. apply Nat.leb_le in IH. apply le_n_S in IH. apply Nat.leb_le in IH. simpl in H2. eapply IHg1 in IH; eauto.
 
-  apply leb_neq in IH. eapply length1_Some in IH; eauto. apply T_Var. apply IH.
+  apply Nat.leb_gt in IH. eapply length1_Some in IH; eauto. apply T_Var. apply IH.
 
   inversion H; subst. apply T_Abs.
   assert (S (length g1) = length ((name, typ) :: g1) ). reflexivity. rewrite H0.
@@ -726,7 +727,7 @@ Lemma shift_M1_succ : forall t n1 n2,
 Proof.
   induction t; intros; eauto; simpl.
   destruct (leb n1 n) eqn:IH1n; simpl.
-  apply le_leb in IH1n. apply le_plus_trans with (p:= (S n2)) in IH1n. apply leb_le in IH1n. rewrite IH1n.
+  apply Nat.leb_le in IH1n. apply le_plus_trans with (p:= (S n2)) in IH1n. apply Nat.leb_le in IH1n. rewrite IH1n.
   rewrite Nat.add_succ_r. rewrite Nat.sub_1_r. reflexivity.
   rewrite IH1n. reflexivity.
 
@@ -751,9 +752,9 @@ Proof.
   induction t; simpl; intros; simpl; try solve [inversion H; subst; econstructor; eauto].
    -
      rewrite shift0_refl.
-     destruct (eqb_nat n 0) eqn:IH. apply eqb_eq in IH. subst.
+     destruct (eqb n 0) eqn:IH. apply Nat.eqb_eq in IH. subst.
      rewrite shift_m1_p1_refl. inversion H; subst. inversion H3; subst. apply H0.
-     destruct n. inversion IH. simpl. rewrite leb_0_T. inversion H; subst. unfold getbinding in H3. simpl in H3. fold getbinding in H3. apply T_Var. rewrite PeanoNat.Nat.sub_0_r. apply H3.
+     destruct n. inversion IH. simpl. admit.
    -
      inversion H; subst. apply T_Abs.
 Admitted.

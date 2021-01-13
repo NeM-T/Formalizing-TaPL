@@ -176,156 +176,6 @@ Inductive multi {X : Type} (R : relation X) : relation X :=
                     R x y ->
                     multi R y z ->
                     multi R x z.
-Fixpoint eqb_nat (n1 n2: nat) :=
-  match n1 with
-  | 0 =>
-    match n2 with
-    | 0 => true
-    | _ => false
-    end
-  | S n1' =>
-    match n2 with
-    | 0 => false
-    | S n2' => eqb_nat n1' n2'
-    end
-  end.
-
-Fixpoint leb (n1 n2: nat) :=
-  if eqb_nat n1 n2 then true else
-    match n2 with
-    | 0 => false
-    | S n2' => leb n1 n2'
-    end.
-
-
-
-Lemma eqb_eq : forall n1 n2,
-    eqb_nat n1 n2 = true <-> eq n1 n2.
-Proof.
-  split. generalize dependent n2.
-  induction n1; induction n2; intros; auto. inversion H. inversion H.
-
-  generalize dependent n2; induction n1; induction n2; intros; auto; simpl.
-  inversion H. inversion H. apply IHn1. inversion H. auto.
-Qed.
-
-Lemma leb_le : forall n1 n2,
-    n1 <= n2 -> leb n1 n2 = true.
-Proof.
-  intros. induction H; simpl.
-  -
-    induction n1; auto. simpl.
-    assert (eqb_nat n1 n1 = true). apply eqb_eq. auto.
-    rewrite H. reflexivity.
-  -
-    destruct (eqb_nat n1 (S m)); auto.
-Qed.
-
-Lemma le_trance : forall n1 n2 n3,
-    n1 <= n2 -> n2 <= n3 -> n1 <= n3.
-Proof.
-  intros. generalize dependent n3. induction H; intros; auto.
-  destruct H0. apply IHle. apply le_S. apply le_n.
-  apply IHle. apply le_S. apply le_S_n. apply le_S. apply H0.
-Qed.
-
-
-Lemma le_leb : forall n1 n2,
-    leb n1 n2 = true -> n1 <= n2.
-Proof.
-  destruct n1; intros.
-  apply le_0_n.
-  induction n2. inversion H. inversion H.
-  destruct (eqb_nat n1 n2) eqn: IH1. apply eqb_eq in IH1. rewrite IH1; auto.
-  apply IHn2 in H1. apply le_S. apply H1.
-Qed.
-
-Lemma le_eq_leb : forall n1 n2,
-    leb n1 n2 = true <-> n1 <= n2.
-Proof.
-  split. apply le_leb. apply leb_le.
-Qed.
-
-Lemma leb0 : forall n,
-    leb 0 n = true.
-Proof.
-  induction n; auto.
-Qed.
-
-Lemma leb_F : forall n1 n2,
-    leb n1 n2 = false <-> not (le n1 n2).
-Proof.
-  split; intros. intro. apply leb_le in H0. rewrite H in H0; inversion H0.
-  destruct n1. induction H. apply Nat.le_0_l. generalize dependent n1; induction n2; intros.
-  reflexivity. simpl. destruct eqb_nat eqn:IH. apply eqb_eq in IH; subst. induction H. apply Nat.le_refl.
-  apply IHn2. intro. apply H. apply le_leb. simpl. rewrite IH. apply leb_le. apply H0.
-Qed.
-
-Lemma leb_neq : forall n1 n2,
-    leb n1 n2 = false -> n2 < n1.
-Proof.
-  intros. apply leb_F in H. apply Nat.nle_gt in H. auto.
-Qed.
-
-Lemma eqb_refl : forall n,
-    eqb_nat n n = true.
-Proof.
-  induction n; auto.
-Qed.
-
-
-Lemma leb_refl : forall n,
-    leb n n = true.
-Proof.
-  induction n; auto. simpl. rewrite eqb_refl. reflexivity.
-Qed.
-
-Definition ltb n1 n2 :=
-  leb (S n1) n2.
-
-Lemma ltb_lt : forall n1 n2,
-    ltb n1 n2 = true <-> lt n1 n2.
-Proof.
-  unfold lt, ltb; split; intros; apply le_eq_leb; auto.
-Qed.
-
-Lemma lt_0_s_f : forall n,
-    ltb 0 (S n) = true.
-Proof.
-  induction n; auto.
-Qed.
-
-Lemma ltb_neq : forall n1 n2,
-    ltb n1 n2 = false <-> not (n1 < n2).
-Proof.
-  unfold ltb, lt. intros. apply leb_F.
-Qed.
-
-Lemma leb_lt_eqb : forall n1 n2,
-    leb n1 n2 = true ->
-    eqb_nat n1 n2 = true \/ ltb n1 n2 = true.
-Proof.
-  intros. apply le_eq_leb in H; induction H.
-  left. apply eqb_refl. right.
-  unfold ltb, leb. destruct IHle. apply eqb_eq in H0; subst. rewrite eqb_refl. reflexivity.
-  destruct eqb_nat; auto.
-Qed.
-
-Lemma leb_neq_lt : forall n1 n2,
-    leb n1 n2 = true ->
-    eqb_nat n1 n2 = false ->
-    ltb n1 n2 = true.
-Proof.
-  intros. apply leb_lt_eqb in H. destruct H; auto. rewrite H in H0. inversion H0.
-Qed.
-
-Lemma ltb_to_leb : forall n1 n2,
-    ltb n1 n2 = true ->
-    leb n1 n2 = true.
-Proof.
-  intros. apply ltb_lt in H. induction H; simpl; destruct eqb_nat; auto.
-  rewrite leb_refl; reflexivity.
-Qed.
 
 Fixpoint my_nth {A: Type} n (l: list A) :=
   match n with
@@ -348,13 +198,13 @@ Proof.
 Qed.
 
 Lemma leb_len_none : forall A n (ctx: list A),
-    leb (length ctx) n = true ->
+    (Nat.leb (length ctx) n) = true ->
     my_nth n ctx = None.
 Proof.
   induction n; intros; auto.
   destruct ctx; auto. simpl in H. inversion H.
   destruct ctx. simpl. reflexivity.
-  simpl. apply IHn. apply leb_le. apply le_S_n. apply le_leb. apply H.
+  simpl. apply IHn. apply Nat.leb_le. apply le_S_n. apply Nat.leb_le. apply H.
 Qed.
 
 Lemma app_getbind : forall A (ctx ctx': list A) n,
