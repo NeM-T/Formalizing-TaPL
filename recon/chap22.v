@@ -894,4 +894,146 @@ Definition CT_fix Γ e := Constrait_Type_fix Γ (max_tyvar_list_term 0 Γ e) e.
 Compute (CT_fix []  (Abs "x" (TyVar 0) (Abs "y" (TyVar 1) (Abs "z" (TyVar 2)
            (App (App (Var 2) (Var 0) ) (App (Var 1) (Var 0)) )) ))).
 
+Fixpoint Constrais_sol_bool σ C :=
+  match C with
+  | nil => true
+  | (ty1, ty2) :: t =>
+    if eqb_ty (subst_type σ ty1) (subst_type σ ty2) then
+      (Constrais_sol_bool σ t)
+    else false
+  end.
+
+Lemma Constrais_sol_bool_app : forall σ C1 C2,
+    Constrais_sol_bool σ (C1 ++ C2) = true ->
+    Constrais_sol_bool σ C1 = true /\ Constrais_sol_bool σ C2 = true.
+Proof.
+  induction C1; simpl; intros; auto.
+  destruct a.
+  destruct eqb_ty; try discriminate.
+  apply IHC1 in H. apply H.
+Qed.
+
+Theorem T22_3_5 : forall e Γ S C σ T n m,
+    Γ |-- n ` e \in S | m ` C ->
+    subst_type σ S = T -> Constrais_sol_bool σ C = true ->
+    subst_type_list σ Γ |- subst_type_term σ e \in T.
+Proof.
+  induction e; simpl; intros; auto.
+  -
+    rewrite <- H0.
+    inversion H; subst.
+    assert (Var n = subst_type_term σ (Var n)). reflexivity.
+    rewrite H0.
+    apply T22_1_2. constructor; auto.
+  -
+    inversion H; subst.
+    eapply IHe in H10; eauto.
+    constructor. apply H10.
+  -
+    inversion H; subst.
+    simpl in H1.
+    destruct eqb_ty eqn:IH1; try discriminate.
+    apply eqb_ty_eq in IH1; subst.
+    apply Constrais_sol_bool_app in H1. destruct H1.
+    econstructor; eauto.
+  -
+    inversion H; subst. simpl. constructor.
+  -
+    inversion H; subst. simpl. constructor.
+  -
+    inversion H; subst. simpl in H1.
+    destruct eqb_ty eqn:IH1; try discriminate.
+    apply eqb_ty_eq in IH1; subst.
+    destruct eqb_ty eqn:IH2; try discriminate.
+    apply eqb_ty_eq in IH2; subst.
+    apply Constrais_sol_bool_app in H1. destruct H1.
+    apply Constrais_sol_bool_app in H1; destruct H1.
+    constructor; eauto.
+Qed.
+
+Lemma app_Constrais_sol_bool : forall σ C1 C2,
+    Constrais_sol_bool σ C1 = true -> Constrais_sol_bool σ C2 = true ->
+    Constrais_sol_bool σ (C1 ++ C2) = true.
+Proof.
+  induction C1; simpl; intros; auto.
+  destruct a. destruct eqb_ty; try discriminate.
+  apply IHC1; auto.
+Qed.    
+
+Lemma getbind_sub : forall σ Γ n T S,
+  getbinding n (subst_type_list σ Γ) = Some T ->
+  getbinding n Γ = Some S ->
+  subst_type σ S = T.
+Proof.
+  induction Γ; simpl; intros.
+  -
+    destruct n; discriminate.
+  -
+    destruct n; simpl in H, H0.
+    inversion H0; subst. inversion H; subst. reflexivity.
+    eapply IHΓ; eauto.
+ Qed.   
+
+Fixpoint max_sigma n (σ: list (nat * ty) ) :=
+  match σ with
+  | nil => n
+  | (m, _):: rest =>
+    let x := if ltb n m then m else n in
+    max_sigma x rest
+  end.
+
+Lemma CT_n_lt : forall e Γ n typ m C,
+    Γ |-- n ` e \in typ | m ` C -> n <= m.
+Proof.
+  intros. induction H; auto.
+  -
+    eapply le_trans with (p:= F'') in IHConstrait_Type1; eauto. 
+  -
+    eapply le_trans with (p:= F2) in IHConstrait_Type1; eauto. 
+    eapply le_trans with (p:= F3) in IHConstrait_Type1; eauto. 
+Qed.
+
+Fixpoint dom_sigma_in n (σ :list (nat * ty)) :=
+  match σ with
+  | nil => false
+  | (m, _) :: rest => if eqb n m then true else dom_sigma_in n rest
+  end.
+
+Fixpoint dom_sigma_in_range n m σ :=
+  match m with
+  | 0 => true
+  | S m' => dom_sigma_in n σ && dom_sigma_in_range (S n) m' σ
+  end.
+
+Theorem T22_3_7 : forall e Γ S C σ T n m,
+    subst_type_list σ Γ |- subst_type_term σ e \in T ->
+    Γ |-- n ` e \in S | m ` C ->
+    subst_type σ S = T /\ Constrais_sol_bool σ C = true.
+Proof.
+  intros. generalize dependent T. generalize dependent σ.
+  induction H0; intros.
+  -
+    inversion H0; subst; simpl; split; auto.
+    eapply getbind_sub in H; eauto.
+  -
+    inversion H; subst. apply IHConstrait_Type in H6. destruct H6.
+    simpl. rewrite H1. split; auto. 
+  -
+    inversion H; subst.
+    eapply IHConstrait_Type1 in H3; eauto. eapply IHConstrait_Type2 in H5; eauto.
+    destruct H3. destruct H5. simpl. rewrite H0. rewrite H2. simpl. rewrite eq_type_refl.
+    simpl. admit.
+  -
+    inversion H; subst. split; auto.
+  -
+    inversion H; subst. split; auto.
+  -
+    inversion H; subst.
+    apply IHConstrait_Type1 in H4. apply IHConstrait_Type2 in H6. apply IHConstrait_Type3 in H7.
+    destruct H4; destruct H6; destruct H7.
+    simpl. rewrite H0, H2, H4. simpl. rewrite eq_type_refl. split; auto.
+    repeat apply app_Constrais_sol_bool; auto.
+Abort.
+
+
 End TypeInf.
