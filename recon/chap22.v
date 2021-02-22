@@ -1,559 +1,4 @@
-Require Coq.extraction.Extraction.
-Require Import Ascii String Coq.Strings.Byte.
-From Coq Require Import Lists.List.
-Import ListNotations.
-Require Export ExtrOcamlChar.
-Extract Inductive bool => "bool" ["true" "false"].
-Extract Inductive string => "char list" [ "[]" "(::)" ].
-Extract Inductive list => "list" [ "[]" "(::)" ].
-Extraction Language OCaml.
-Load "../std".
-
-Inductive ty : Type :=
-| Bool
-| Arrow (ty1 ty2: ty)
-| TyVar: nat -> ty.
-Notation "t1 '|-->' t2" := (Arrow t1 t2) (at level 40).
-
-Inductive term : Type :=
-(*純粋λ計算*)
-| Var (n: nat)
-| Abs (name: string) (typ: ty) (t: term)
-| App (t1 t2: term)
-(*ぶーる*)
-| Tru
-| Fls
-| If (t1 t2 t3: term).
-
-Inductive value : term -> Prop :=
-| V_tru : value Tru
-| V_fls : value Fls
-| V_abs :forall typ name t1, value (Abs typ name t1).
-
-Definition context : Type := list ty.
-
-Definition eqb_string s1 s2:=
-  String.eqb s1 s2.
-
-Fixpoint getbinding (n : nat) (ctx: context) :=
-  match n with
-  | 0 =>
-    match ctx with
-    | [] => None
-    | t :: ctx' => Some t
-    end
-  | S n' =>
-    match ctx with
-    | [] => None
-    | x :: ctx' => getbinding n' ctx'
-    end
-  end.
-
-Definition isval t:=
-match t with
-| Tru => true
-| Fls => true
-| Abs _ _ _ => true
-| _ => false
-end.
-
-Fixpoint eqb_ty (T1 T2: ty) : bool :=
-  match (T1, T2) with
-  | (Bool, Bool) => true
-  | (T11 |--> T12, T21 |--> T22) =>
-    andb (eqb_ty T11 T21) (eqb_ty T12 T22)
-  | (TyVar n1, TyVar n2) => Nat.eqb n1 n2
-  | _ => false
-  end.
-
-Reserved Notation "ctx '|-' x '\in' t" (at level 40).
-Inductive has_type : context -> term -> ty -> Prop :=
-| T_True:
-    forall ctx,
-      ctx |- Tru \in Bool
-| T_False:
-    forall ctx,
-      ctx |- Fls \in Bool
-| T_If:
-    forall ctx t1 t2 t3 T',
-      ctx |- t1 \in Bool ->
-      ctx |- t2 \in T' ->
-      ctx |- t3 \in T' ->
-      ctx |- (If t1 t2 t3) \in T'
-| T_Var:
-    forall ctx n1 t,
-      getbinding n1 ctx = Some t ->
-      ctx |- (Var n1) \in t
-| T_Abs:
-    forall ctx x T1 t2 T2,
-      (T1 :: ctx) |- t2 \in T2 ->
-      ctx |- (Abs x T1 t2) \in (T1 |--> T2)
-| T_App:
-    forall ctx t1 T11 T12 t2,
-      ctx |- t1 \in (T11 |--> T12) ->
-      ctx |- t2 \in T11 ->
-      ctx |- App t1 t2 \in T12
-
-where " ctx '|-' x '\in' t " := (has_type ctx x t).
-
-
-Example type1:
-  [((Bool |--> Bool))] |- App (Var 0) (If Fls Tru Fls) \in Bool.
-Proof.
-  eapply T_App. apply T_Var. reflexivity.
-  apply T_If. apply T_False. apply T_True. apply T_False.
-Qed.
-
-Example type2:
-  [((Bool |--> Bool))] |- (Abs "x" Bool (App (Var 1) (If (Var 0) Fls (Var 0)))) \in (Bool |--> Bool).
-Proof.
-  apply T_Abs. eapply T_App. apply T_Var. reflexivity.
-  apply T_If. apply T_Var. reflexivity. apply T_False. apply T_Var. reflexivity.
-Qed.
-
-Lemma eq_type_refl : forall T,
-    eqb_ty T T = true.
-Proof.
-  induction T; simpl; auto. rewrite IHT1, IHT2; auto. apply Nat.eqb_refl.
-Qed.
-
-Lemma eqb_ty_eq : forall T1 T2,
-    eqb_ty T1 T2 = true <-> T1 = T2.
-Proof.
-  split; intros.
-  generalize dependent T2; induction T1; intros;
-    destruct T2; try solve_by_invert; auto.
-  simpl in H. apply andb_prop in H; destruct H.
-  apply IHT1_1 in H. apply IHT1_2 in H0; subst. reflexivity.
-
-  simpl in H. apply Nat.eqb_eq in H; subst. reflexivity.
-
-  subst. apply eq_type_refl.
-Qed.
-
-Fixpoint typeof ctx t : option ty :=
-  match t with
-  | Tru =>
-    (Some Bool)
-  | Fls =>
-    Some Bool
-  | If t1 t2 t3 =>
-    match typeof ctx t1 with
-    | Some Bool =>
-      match typeof ctx t2 with
-      | Some T2 =>
-        match typeof ctx t3 with
-        | Some T3 =>
-          if eqb_ty T2 T3 then
-            Some T2
-          else
-            None
-        | None => None
-        end
-      | None => None
-      end
-    | _ => None
-    end
-  | Var n =>
-    getbinding n ctx
-  | Abs x T1 t1 =>
-    match typeof (T1 :: ctx) t1 with
-    | Some T2 =>
-      Some (T1 |--> T2)
-    | None => None
-    end
-  | App t1 t2 =>
-    match typeof ctx t1 with
-    | Some (T11 |--> T12) =>
-      match typeof ctx t2 with
-      | Some T21 =>
-        if eqb_ty T11 T21 then
-          Some T12
-        else
-          None
-      | None => None
-      end
-    | _ => None
-    end
-  end.
-
-Lemma typeof_hasType : forall t ctx T,
-    has_type ctx t T <-> typeof ctx t = Some T.
-Proof.
-  split; intros.
-  -
-    induction H; simpl; auto.
-    +
-      rewrite IHhas_type1, IHhas_type2, IHhas_type3. clear.
-      rewrite eq_type_refl; reflexivity.
-    +
-      rewrite IHhas_type. reflexivity.
-    +
-      rewrite IHhas_type2, IHhas_type1. rewrite eq_type_refl; reflexivity.
-  -
-    generalize dependent T. generalize dependent ctx; induction t; intros; simpl; auto.
-    +
-      inversion H; subst; apply T_Var; simpl; auto.
-    +
-      inversion H; subst. destruct (typeof ((typ) :: ctx) t) eqn:IH. inversion H1; subst.
-      apply IHt in IH. apply T_Abs. apply IH. inversion H1.
-    +
-      simpl in H.
-      destruct (typeof ctx t1) eqn:IH1; try discriminate.
-      destruct t; try discriminate.
-      destruct (typeof ctx t2) eqn:IH2; try discriminate.
-      apply IHt1 in IH1. apply IHt2 in IH2.
-      destruct (eqb_ty t3 t) eqn:IH3; try discriminate. apply eqb_ty_eq in IH3; subst.
-      inversion H; subst. econstructor; eauto.
-    +
-      inversion H. apply T_True.
-    +
-      inversion H. apply T_False.
-    +
-      inversion H.
-      destruct (typeof ctx t1) eqn:IH1; try discriminate.
-      destruct t; try discriminate.
-      destruct (typeof ctx t2) eqn:IH2; try discriminate.
-      apply IHt1 in IH1. apply IHt2 in IH2.
-      destruct (typeof ctx t3) eqn:IH3; try discriminate. apply IHt3 in IH3.
-      destruct (eqb_ty t t0) eqn:IH4; try discriminate.
-      apply eqb_ty_eq in IH4; subst.
-      inversion H1; subst.
-      constructor; auto.
-Qed.
-
-
-Lemma leb_0_T : forall n,
-    Nat.leb 0 n = true.
-Proof.
-  induction n; auto.
-Qed.
-
-Fixpoint in_free t n :=
-  match t with
-  | Var n1 =>
-    if Nat.leb n n1 then
-      true
-    else
-      false
-  | Abs x T t1 =>
-    in_free t1 (S n)
-  | App t1 t2 =>
-    in_free t1 n || in_free t2 n
-  | Tru => false
-  | Fls => false
-  | If t1 t2 t3 =>
-    in_free t1 n || in_free t2 n || in_free t3 n
-  end.
-
-Notation closed t := (in_free t 0 = false).
-
-Lemma var_hastype_none : forall ctx,
-    getbinding (length ctx) ctx = None.
-Proof.
-  induction ctx; auto.
-Qed.
-
-Lemma var_hastype_none_succ : forall n ctx,
-    Nat.leb (length ctx) n = true ->
-    getbinding n ctx = None.
-Proof.
-  induction n; intros; auto.
-  destruct ctx; auto. simpl in H. inversion H.
-  destruct ctx. simpl. reflexivity.
-  simpl. apply IHn. apply Nat.leb_le. apply le_S_n. apply Nat.leb_le. apply H.
-Qed.
-
-Require Import Nat.
-Lemma closed_hastype : forall t T ctx,
-    ctx |- t \in T ->
-    in_free t (length ctx) = false.
-Proof.
-  induction t; intros; simpl; inversion H; subst; auto.
-  destruct leb eqn:IH; auto. rewrite var_hastype_none_succ in H2. inversion H2. apply IH.
-  apply IHt in H5. simpl in H5. apply H5.
-  apply IHt1 in H3. apply IHt2 in H5. rewrite H3, H5; reflexivity.
-  apply IHt1 in H4. apply IHt2 in H6. apply IHt3 in H7. rewrite H4, H6, H7; reflexivity.
-Qed.
-
-Lemma cosed_type_nil : forall t T,
-    [] |- t \in T ->
-    closed t.
-Proof.
-  intros. apply closed_hastype in H. simpl in H. apply H.
-Qed.
-
-Lemma appGetbind : forall ctx ctx' n,
-    getbinding (n + (length ctx)) (ctx ++ ctx') = getbinding n ctx'.
-Proof.
-  induction ctx; simpl; intros; auto.
-  rewrite <- plus_n_O; reflexivity.
-  rewrite <- plus_Snm_nSm. simpl. apply IHctx.
-Qed.
-
-Lemma length1_Some : forall n ctx ctx1 ctx2 T,
-    n < length ctx ->
-    getbinding n (ctx ++ ctx1) = Some T ->
-    getbinding n (ctx ++ ctx2) = Some T.
-Proof.
-  induction n; simpl; intros. destruct ctx. inversion H. simpl. simpl in H0. apply H0.
-  destruct ctx. inversion H. simpl. destruct ( (t :: ctx) ++ ctx1) eqn:IHH. inversion H0. inversion IHH; subst.
-  eapply IHn in H0. apply H0. simpl in H. apply lt_S_n in H. apply H.
-Qed.
-
-
-(**)
-Fixpoint shift (d k : nat) (t : term) : term :=
-match t with
-| Var x =>
-  Var (if leb d x then x + k else x)
-| Abs x T t' =>
-  Abs x T (shift (S d) k t')
-| App t1 t2 =>
-  App (shift d k t1) (shift d k t2)
-| Tru => Tru
-| Fls => Fls
-| If t1 t2 t3 =>
-  If (shift d k t1) (shift d k t2) (shift d k t3)
-end.
-
-Fixpoint subst (d : nat) (s t: term) : term :=
-match t with
-| Var x =>
-  if eqb d x then (*d == x*)
-    shift 0 d s
-  else if ltb d x then (*d < x*)
-         Var (pred x) else
-         Var x (*d > x*)
-| Abs x T t' => Abs x T (subst (S d) s t')
-| App t1 t2 => App (subst d s t1) (subst d s t2)
-| Tru => Tru
-| Fls => Fls
-| If t1 t2 t3 =>
-  If (subst d s t1) (subst d s t2) (subst d s t3)
-end.
-
-Fixpoint eval (t: term) :=
-  match t with
-  | If t1 t2 t3 =>
-    match t1 with
-    | Tru => Some t2
-    | Fls => Some t3
-    | _ => match eval t1 with
-          | Some t1' =>
-            Some (If t1' t2 t3)
-          | None => None
-          end
-    end
-  | App t1 t2 =>
-    if isval t1 then
-      if isval t2 then
-        match t1 with
-        | Abs _ _ t12 => Some (subst 0 t2 t12)
-        | _ => None
-        end
-      else
-        match eval t2 with
-        | Some t2' => Some (App t1 t2')
-        | None => None
-        end
-    else
-      match eval t1 with
-      | Some t1' => Some (App t1' t2)
-      | None => None
-      end
-  | _ => None
-  end.
-
-Reserved Notation " t '-->' t' " (at level 40).
-Inductive step :term -> term -> Prop :=
-| E_IfTrue : forall t2 t3,
-    If Tru t2 t3 --> t2
-| E_IfFalse : forall t2 t3,
-    If Fls t2 t3 --> t3
-| E_If : forall t1 t1' t2 t3,
-    t1 --> t1' ->
-    If t1 t2 t3 --> If t1' t2 t3
-| E_App1 : forall t1 t2 t1',
-    t1 --> t1' ->
-    App t1 t2 --> App t1' t2
-| E_App2 : forall v1 t2 t2',
-    value v1 ->
-    t2 --> t2' ->
-    App v1 t2 --> App v1 t2'
-| E_AppAbs : forall typ str t12 t2,
-    value t2 ->
-    App (Abs typ str t12) t2 --> subst 0 t2 t12
-
-  where " t '-->' t' " := (step t t').
-
-Lemma shift0 : forall t n,
-    shift n 0 t = t.
-Proof.
-  induction t; intros; simpl; eauto.
-  rewrite <- plus_n_O. destruct leb; reflexivity.
-
-  rewrite IHt; reflexivity.
-  rewrite IHt1, IHt2; reflexivity.
-  rewrite IHt1, IHt2, IHt3; reflexivity.
-Qed.
-
-Lemma E9_3_2 :  forall n T,
-    not (exists ctx,ctx |- App (Var n) (Var n) \in T).
-Proof.
-  intros; intro. inversion H.
-  inversion H0; subst. inversion H4. inversion H6; subst.
-  rewrite H9 in H3. inversion H3. apply eqb_ty_eq in H2.
-  generalize H2. clear. generalize dependent T.
-  induction T11; intros. inversion H2. inversion H2. apply andb_prop in H0. inversion H0.
-  apply IHT11_1 in H. apply H. inversion H2.
-Qed.
-
-Lemma T9_3_3 : forall t1 ctx T1 T2,
-    ctx |- t1 \in T1 ->
-    ctx |- t1 \in T2 ->
-    T1 = T2.
-Proof.
-  induction t1; intros.
-  -
-    inversion H; inversion H0; subst. rewrite H3 in H7. inversion H7; reflexivity.
-  -
-    inversion H; inversion H0; subst.
-    apply eqb_ty_eq. simpl; apply andb_true_intro; split; auto.
-    clear. induction typ; auto. simpl. apply andb_true_intro. split; auto.
-    apply eqb_ty_eq. reflexivity.
-    eapply IHt1 in H6; eauto. subst. rewrite eqb_ty_eq. reflexivity.
-  -
-    inversion H; inversion H0; subst.
-    apply IHt1_1 with (T2:= (T0 |--> T2)) in H4; auto.
-    inversion H4; reflexivity.
-  -
-    inversion H; inversion H0; subst; auto.
-  -
-    inversion H; inversion H0; subst; auto.
-  -
-    inversion H; inversion H0; subst; auto.
-    apply (IHt1_2 ctx T1 T2); auto.
-Qed.
-
-Lemma L9_3_4_bool : forall ctx v,
-    value v ->
-    ctx |- v \in Bool ->
-    v = Tru \/ v = Fls.
-Proof.
-  intros. inversion H0; subst. left; auto. right; auto.
-  inversion H. inversion H. inversion H.
-Qed.
-
-Lemma L9_3_4_Abs: forall ctx v T1 T2,
-    value v ->
-    ctx |- v \in (T1 |--> T2) ->
-    exists x t, v = Abs x T1 t.
-Proof.
-  intros. inversion H0; subst; try solve_by_invert.
-  exists x, t2. reflexivity.
-Qed.
-
-Theorem T9_3_5 : forall t T,
-    [] |- t \in T ->
-    value t \/ exists t', t --> t'.
-Proof.
-  induction t; simpl; intros.
-  -
-    inversion H; subst. destruct n; inversion H2.
-  -
-    left; apply V_abs.
-  -
-    right.
-    inversion H; subst.
-    generalize H3; intro. apply IHt1 in H3. destruct H3.
-    apply (L9_3_4_Abs [] t1) in H0; auto. inversion H0. inversion H2.
-    apply IHt2 in H5. inversion H5. rewrite H3.
-    exists (subst 0 t2 x0). apply E_AppAbs; auto.
-    inversion H4. exists (App t1 x1). apply E_App2; auto.
-    inversion H1. exists (App x t2); apply E_App1; auto.
-  -
-    left. apply V_tru.
-  -
-    left; apply V_fls.
-  -
-    inversion H; subst. right. generalize H4; intros; apply IHt1 in H4.
-    destruct H4. apply (L9_3_4_bool [] t1) in H1; auto. destruct H1; rewrite H1.
-    exists t2; apply E_IfTrue. exists t3; apply E_IfFalse. inversion H1.
-    exists (If x t2 t3); apply E_If; auto.
-Qed.
-
-Lemma shifting : forall t g g1 g2 T,
-  (g1 ++ g) |- t \in T ->
-  (g1 ++ g2 ++ g) |- (shift (length g1) (length g2) t) \in T.
-Proof.
-  induction t; intros; inversion H; subst; clear H; try solve [econstructor; eauto]; simpl.
-
-  apply T_Var. destruct (leb) eqn:IH. apply Nat.leb_le in IH.
-  generalize dependent g. generalize dependent T. generalize dependent n.
-  induction g1; simpl; intros; eauto. rewrite appGetbind. apply H2.
-  destruct n. inversion IH. simpl.
-  apply le_S_n in IH. simpl in H2. eapply IHg1 in IH; eauto.
-
-  apply Nat.leb_gt in IH. eapply length1_Some in IH. apply IH. apply H2.
-
-  apply T_Abs.
-  assert (S (length g1) = length (typ :: g1)). reflexivity.
-  rewrite H. apply IHt with (g1:= (typ :: g1)). apply H5.
-Qed.
-
-Lemma gb_lt_add : forall ctx ctx' p T n,
-  getbinding (S n) (ctx' ++ p :: ctx) = Some T ->
-  length ctx' < S n ->
-  getbinding n (ctx' ++ ctx) = Some T.
-Proof.
-  induction ctx'; simpl; intros; eauto.
-  destruct n. inversion H0; subst. apply Nat.leb_le in H2; inversion H2.
-  apply IHctx' in H. simpl. apply H. apply lt_S_n. apply H0.
-Qed.
-
-Lemma L9_3_8: forall t s Ts T ctx ctx',
-    (ctx' ++ Ts :: ctx) |- t \in T ->
-    ctx |- s \in Ts ->
-    (ctx' ++ ctx) |- subst (length ctx') s t \in T.
-Proof.
-  induction t; intros; inversion H; subst; clear H; try solve [econstructor; eauto]; simpl.
-  destruct eqb eqn:IHeq.
-  apply Nat.eqb_eq in IHeq; subst. apply shifting with (g2 := ctx') (g1:= []) in H0; simpl in H0.
-  rewrite <- (plus_O_n (length ctx')) in H3. rewrite (appGetbind ctx' ( (Ts) :: ctx) 0) in H3.
-  simpl in H3. inversion H3; subst. apply H0.
-  destruct ltb eqn:IHlt. apply Nat.ltb_lt in IHlt.
-  destruct n. inversion IHlt. simpl. apply T_Var. clear H0.
-  eapply gb_lt_add in H3; eauto.
-
-  apply Nat.ltb_ge in IHlt. apply T_Var.
-  apply le_lt_or_eq in IHlt. destruct IHlt.
-  eapply length1_Some in H; eauto.
-  subst. rewrite Nat.eqb_refl in IHeq; inversion IHeq.
-
-  apply T_Abs. apply (IHt s Ts T2 ctx ((typ) :: ctx')) in H6. simpl in H6. apply H6.
-  apply H0.
-Qed.
-
-Theorem T9_3_9 : forall t t' T ctx,
-    ctx |- t \in T ->
-    t --> t' ->
-    ctx |- t' \in T.
-Proof.
-  intros. generalize dependent T. induction H0; subst; simpl; intros; try solve [inversion H; subst; eauto].
-  -
-    inversion H; subst. apply IHstep in H5. apply T_If; auto.
-  -
-    inversion H; subst. apply IHstep in H4. apply T_App with T11; auto.
-  -
-    inversion H1; subst. apply IHstep in H7. apply T_App with T11; auto.
-  -
-    inversion H0; subst. clear H0. inversion H4; subst.
-    apply (L9_3_8 t12 t2 T11 T ctx []) in H2; eauto.
-Qed.
-
-Section TypeInf.
-
+Load "./syntax".
 Import Nat.
 
 Fixpoint match_natlist {A: Type} (l: list (nat * A)) n def :=
@@ -1001,39 +446,919 @@ Fixpoint dom_sigma_in n (σ :list (nat * ty)) :=
 
 Fixpoint dom_sigma_in_range n m σ :=
   match m with
-  | 0 => true
-  | S m' => dom_sigma_in n σ && dom_sigma_in_range (S n) m' σ
+  | 0 => false
+  | S m' => dom_sigma_in (S n) σ || dom_sigma_in_range (S n) m' σ
   end.
 
-Theorem T22_3_7 : forall e Γ S C σ T n m,
-    subst_type_list σ Γ |- subst_type_term σ e \in T ->
-    Γ |-- n ` e \in S | m ` C ->
-    subst_type σ S = T /\ Constrais_sol_bool σ C = true.
+Lemma dom_sigma_range_correct : forall m n σ,
+    dom_sigma_in_range n m σ = false ->
+    (forall x, n <= S x -> x <= (n + m) -> dom_sigma_in x σ = false).
 Proof.
-  intros. generalize dependent T. generalize dependent σ.
-  induction H0; intros.
-  -
-    inversion H0; subst; simpl; split; auto.
-    eapply getbind_sub in H; eauto.
-  -
-    inversion H; subst. apply IHConstrait_Type in H6. destruct H6.
-    simpl. rewrite H1. split; auto. 
-  -
-    inversion H; subst.
-    eapply IHConstrait_Type1 in H3; eauto. eapply IHConstrait_Type2 in H5; eauto.
-    destruct H3. destruct H5. simpl. rewrite H0. rewrite H2. simpl. rewrite eq_type_refl.
-    simpl. admit.
-  -
-    inversion H; subst. split; auto.
-  -
-    inversion H; subst. split; auto.
-  -
-    inversion H; subst.
-    apply IHConstrait_Type1 in H4. apply IHConstrait_Type2 in H6. apply IHConstrait_Type3 in H7.
-    destruct H4; destruct H6; destruct H7.
-    simpl. rewrite H0, H2, H4. simpl. rewrite eq_type_refl. split; auto.
-    repeat apply app_Constrais_sol_bool; auto.
 Abort.
 
+Fixpoint create_sigma n m l : option (list (nat * ty)) :=
+  match m, l with
+  | 0, nil => Some nil
+  | S m', h:: t =>
+    match create_sigma (S n) m' t with
+    | Some t' => Some ((S n, h):: t')
+    | None => None
+    end
+  | _, _ => None
+  end.
 
-End TypeInf.
+Fixpoint subst_type_opt l t n m :=
+  match t with
+  | Bool => Some Bool
+  | TyVar x =>
+    if ltb n x && leb x m then None
+    else Some (match_natlist l x t)
+  | t1 |--> t2 =>
+    match subst_type_opt l t1 n m , subst_type_opt l t2 n m with
+    | Some ty1, Some ty2 => Some (ty1 |--> ty2)
+    | _, _ => None
+    end
+  end.
+
+Fixpoint opt_subst_type_list σ Γ n m :=
+  match Γ with
+  | nil => Some nil
+  | h :: t =>
+    match subst_type_opt σ h n m with
+    | Some h' =>
+      match opt_subst_type_list σ t n m with
+      | Some t' => Some (h' :: t')
+      | None => None
+      end
+    | None => None
+    end
+  end.
+
+Fixpoint opt_subst_type_term σ e n m :=
+  match e with
+  | Abs x typ e1 =>
+    match subst_type_opt σ typ n m, opt_subst_type_term σ e1 n m with
+    | Some ty', Some e' => Some (Abs x ty' e')
+    | _, _ => None
+    end
+  | App e1 e2 =>
+    match opt_subst_type_term σ e1 n m, opt_subst_type_term σ e2 n m with
+    | Some e1', Some e2' => Some (App e1' e2')
+    | _, _ => None
+    end
+  | If e1 e2 e3 =>
+    match opt_subst_type_term σ e1 n m, opt_subst_type_term σ e2 n m, opt_subst_type_term σ e3 n m with
+    | Some e1', Some e2', Some e3' => Some (If e1' e2' e3')
+    | _, _, _ => None
+    end
+  | _ => Some e
+  end.
+
+Lemma subst_type_opt_refl : forall σ typ n,
+    subst_type_opt σ typ n n = Some (subst_type σ typ).
+Proof.
+  induction typ; simpl; intros; auto.
+  -
+    rewrite IHtyp1, IHtyp2. reflexivity.
+  -
+    destruct ltb eqn:IH1; simpl; auto.
+    apply ltb_lt in IH1. apply leb_gt in IH1. rewrite IH1. reflexivity.
+Qed.    
+
+Lemma opt_subst_type_term_refl : forall σ e n,
+    opt_subst_type_term σ e n n = Some (subst_type_term σ e).
+Proof.
+  induction e; simpl; intros; eauto.
+  -
+    rewrite IHe. rewrite subst_type_opt_refl. reflexivity.
+  -
+    rewrite IHe1, IHe2. reflexivity.
+  -
+    rewrite IHe1, IHe2, IHe3. reflexivity.
+Qed.    
+
+Lemma opt_subst_type_list_refl : forall σ Γ n,
+    opt_subst_type_list σ Γ n n = Some (subst_type_list σ Γ).
+Proof.
+  induction Γ; simpl; intros; auto.
+  rewrite IHΓ. rewrite subst_type_opt_refl. reflexivity.
+Qed.
+
+Lemma opt_to_subst_type : forall typ σ n m t',
+    subst_type_opt σ typ n m = Some t' ->
+    subst_type σ typ = t'.
+Proof.
+  induction typ; simpl; intros; auto.
+  -
+    inversion H; subst; auto.
+  -
+    destruct subst_type_opt eqn:IH1; try discriminate.
+    apply IHtyp1 in IH1. 
+    destruct subst_type_opt eqn:IH2; try discriminate.
+    apply IHtyp2 in IH2.
+    inversion H; subst.
+    reflexivity.
+  -
+    destruct ltb; simpl in H.
+    destruct leb; try discriminate.
+    inversion H; subst. reflexivity.
+    inversion H; subst. reflexivity.
+Qed.
+
+Lemma opt_to_subst_list : forall l σ n m l',
+    opt_subst_type_list σ l n m = Some l' ->
+    subst_type_list σ l = l'.
+Proof.
+  induction l; simpl; intros; auto.
+  -
+    inversion H; subst. reflexivity.
+  -
+    destruct subst_type_opt eqn:IH1; try discriminate.
+    destruct opt_subst_type_list eqn:IH2; try discriminate.
+    apply opt_to_subst_type in IH1.
+    inversion H; subst.
+    apply IHl in IH2. rewrite IH2.
+    reflexivity.
+Qed.    
+
+Lemma opt_to_subst_term : forall e σ n m e',
+    opt_subst_type_term σ e n m = Some e' ->
+    subst_type_term σ e = e'.
+Proof.
+  induction e; simpl; intros; try solve [inversion H; subst; reflexivity].
+  -
+    destruct subst_type_opt eqn:IH1; try discriminate.
+    apply opt_to_subst_type in IH1.
+    destruct opt_subst_type_term eqn:IH2; try discriminate.
+    apply IHe in IH2. inversion H; subst.
+    reflexivity.
+  -
+    destruct opt_subst_type_term eqn:IH1; try discriminate.
+    apply IHe1 in IH1.
+    destruct opt_subst_type_term eqn:IH2; try discriminate.
+    apply IHe2 in IH2.
+    inversion H; subst. reflexivity.
+  -
+    destruct opt_subst_type_term eqn:IH1; try discriminate.
+    apply IHe1 in IH1.
+    destruct opt_subst_type_term eqn:IH2; try discriminate.
+    apply IHe2 in IH2.
+    destruct opt_subst_type_term eqn:IH3; try discriminate.
+    apply IHe3 in IH3.
+    inversion H; subst; reflexivity.
+Qed.    
+
+Lemma create_sigma_app : forall l1 n n1 m l2 s1 s2,
+    create_sigma n n1 l1 = Some s1 ->
+    create_sigma (n + n1) m l2 = Some s2 ->
+    create_sigma n (n1 + m) (l1 ++ l2) = Some (s1 ++ s2).
+Proof.
+  induction l1; simpl; intros.
+  -
+    destruct n1; try discriminate.
+    simpl in H. inversion H; subst. simpl.
+    rewrite add_0_r in H0.
+    apply H0.
+  -
+    destruct n1; try discriminate.
+    simpl in H. destruct create_sigma eqn:IH; try discriminate.
+    simpl. 
+    inversion H; subst.
+    erewrite IHl1; eauto. reflexivity.
+    simpl.
+    rewrite add_succ_r in H0.
+    apply H0.
+Qed.    
+
+Lemma create_dom_le : forall m n x l σ,
+    create_sigma n m l = Some σ ->
+    x <= n ->
+    dom_sigma_in x σ = false.
+Proof.
+  induction m; simpl; intros.
+  -
+    destruct l; try discriminate.
+    inversion H; subst. reflexivity.
+  -
+    destruct l; try discriminate.
+    destruct create_sigma eqn:IH; try discriminate.
+    inversion H; subst.
+    apply IHm with (x:= x) in IH; auto.
+    simpl.
+    destruct eqb eqn:IH0; auto.
+    apply eqb_eq in IH0; subst.
+    apply nle_succ_diag_l in H0.
+    inversion H0.
+Qed.
+
+Lemma create_dom_lt : forall m n x l σ,
+    create_sigma n m l = Some σ ->
+    (n + m) < x ->
+    dom_sigma_in x σ = false.
+Proof.
+  induction m; simpl; intros.
+  -
+    destruct l; try discriminate.
+    inversion H; subst. reflexivity.
+  -
+    destruct l; try discriminate.
+    destruct create_sigma eqn:IH; try discriminate.
+    inversion H; subst.
+    apply IHm with (x:= x) in IH; auto.
+    simpl.
+    destruct eqb eqn:IH0; auto.
+    apply eqb_eq in IH0; subst.
+    rewrite add_succ_r in H0.
+    unfold Peano.lt in H0. apply le_S_n in H0.
+    apply le_trans with (n:= S n) in H0.
+    apply nle_succ_diag_l in H0. inversion H0.
+    apply le_n_S. apply le_add_r.
+    rewrite add_succ_r in H0. apply H0.
+Qed.    
+
+Lemma dom_notin_app : forall σ1 σ2 n,
+    dom_sigma_in n σ1 = false ->
+    dom_sigma_in n σ2 = false ->
+    dom_sigma_in n (σ1 ++ σ2) = false.
+Proof.
+  induction σ1; simpl; intros; auto.
+  destruct a. destruct eqb; try discriminate.
+  apply IHσ1; auto.
+Qed.
+
+Lemma dom_notin_app_eq : forall ad n σ,
+    dom_sigma_in n ad = false ->
+    match_natlist σ n (TyVar n) = match_natlist (ad ++ σ) n (TyVar n).
+Proof.
+  induction ad; simpl; intros.
+  -
+    reflexivity.
+  -
+    destruct a. destruct eqb eqn:IH; try discriminate.
+    apply IHad with (σ := σ) in H; eauto.
+    rewrite eqb_sym. rewrite IH. rewrite H. reflexivity.
+Qed.
+
+
+Lemma opt_subst_type_dom_notin : forall typ σ n m T addty l,
+    subst_type_opt σ typ n m = Some T ->
+    (create_sigma n (m - n) l) = Some addty ->
+    subst_type ( addty ++ σ ) typ = T.
+Proof.
+  induction typ; simpl; intros; auto.
+  -
+    inversion H; subst. reflexivity.
+  -
+    destruct subst_type_opt eqn:IH1; try discriminate.
+    destruct (subst_type_opt σ typ2) eqn:IH2; try discriminate.
+    inversion H; subst.
+    eapply IHtyp1 in IH1; eauto.
+    eapply IHtyp2 in IH2; eauto.
+    rewrite IH1, IH2. reflexivity.
+  -
+    destruct ltb eqn:IH1.
+    destruct leb eqn:IH2; try discriminate;
+    simpl in H; inversion H; subst.
+    +
+      apply leb_gt in IH2. apply create_dom_lt with (x:= n) in H0.
+      apply dom_notin_app_eq with (σ := σ) in H0.
+      symmetry. apply H0.
+      destruct (leb n0 m) eqn:IH.
+      apply leb_le in IH.
+      rewrite add_sub_assoc; auto. rewrite add_comm.
+      rewrite add_sub. apply IH2.
+      apply leb_nle in IH.
+      rewrite not_le_minus_0; auto. rewrite add_0_r.
+      apply ltb_lt. apply IH1.
+    +
+      rewrite andb_false_l in H. inversion H; subst.
+      apply ltb_ge in IH1.
+      apply create_dom_le with (x:= n) in H0; auto.
+      apply dom_notin_app_eq with (σ := σ) in H0.
+      rewrite H0. reflexivity.
+Qed.
+
+Lemma opt_subst_list_dom_notin : forall l1 σ n m L addl l,
+    opt_subst_type_list σ l1 n m = Some L ->
+    (create_sigma n (m - n) l) = Some addl ->
+    subst_type_list ( addl ++ σ ) l1 = L.
+Proof.
+  induction l1; simpl; intros; auto.
+  -
+    inversion H; subst. reflexivity.
+  -
+    destruct subst_type_opt eqn:IH1; try discriminate.
+    destruct opt_subst_type_list eqn:IH2; try discriminate.
+    inversion H; subst. clear H.
+    apply opt_subst_type_dom_notin with (addty:= addl) (l:= l) in IH1; auto.
+    rewrite IH1.
+    eapply IHl1 in IH2; eauto. rewrite IH2.
+    reflexivity.
+Qed.
+
+Lemma opt_subst_term_dom_notin : forall e1 σ n m e addl l,
+    opt_subst_type_term σ e1 n m = Some e ->
+    (create_sigma n (m - n) l) = Some addl ->
+    subst_type_term ( addl ++ σ ) e1 = e.
+Proof.
+  induction e1; simpl; intros; try solve[inversion H; subst; reflexivity].
+  -
+    destruct subst_type_opt eqn:IH1; try discriminate.
+    destruct opt_subst_type_term eqn:IH2; try discriminate.
+    inversion H; subst.
+    eapply IHe1 in IH2; eauto. rewrite IH2.
+    eapply opt_subst_type_dom_notin in IH1; eauto.
+    rewrite IH1. reflexivity.
+  -
+    destruct opt_subst_type_term eqn:IH1; try discriminate.
+    eapply IHe1_1 in IH1; eauto.
+    destruct opt_subst_type_term eqn:IH2; try discriminate.
+    eapply IHe1_2 in IH2; eauto.
+    inversion H; subst. reflexivity.
+  -
+    destruct opt_subst_type_term eqn:IH1; try discriminate.
+    eapply IHe1_1 in IH1; eauto.
+    destruct opt_subst_type_term eqn:IH2; try discriminate.
+    eapply IHe1_2 in IH2; eauto.
+    destruct opt_subst_type_term eqn:IH3; try discriminate.
+    eapply IHe1_3 in IH3; eauto.
+    inversion H; subst. reflexivity.
+Qed.
+
+Lemma opt_subst_type_add : forall typ σ n m T addty l,
+    subst_type_opt σ typ n m = Some T ->
+    (create_sigma n (m - n) l) = Some addty ->
+    subst_type_opt ( addty ++ σ ) typ n m = Some T.
+Proof.
+  induction typ; simpl; intros; auto.
+  -
+    destruct subst_type_opt eqn:IH1; try discriminate.
+    destruct (subst_type_opt σ typ2) eqn:IH2; try discriminate.
+    inversion H; subst.
+    eapply IHtyp1 in IH1; eauto.
+    eapply IHtyp2 in IH2; eauto.
+    rewrite IH1, IH2. reflexivity.
+  -
+    destruct ltb eqn:IH1.
+    destruct leb eqn:IH2; try discriminate;
+    simpl in H; inversion H; subst.
+    +
+      simpl.
+      apply leb_gt in IH2. apply create_dom_lt with (x:= n) in H0.
+      apply dom_notin_app_eq with (σ := σ) in H0. 
+      symmetry. rewrite H0. reflexivity.
+      apply ltb_lt in IH1.
+      destruct (leb m n0) eqn:IH.
+      apply leb_le in IH. apply sub_0_le in IH. rewrite IH. rewrite add_0_r.
+      apply IH1.
+      apply leb_gt in IH. apply lt_le_incl in IH.
+      rewrite add_sub_assoc; auto. rewrite minus_plus.
+      apply IH2.
+    +
+      rewrite andb_false_l in H. rewrite andb_false_l.
+      inversion H; subst.
+      apply ltb_ge in IH1.
+      apply create_dom_le with (x:= n) in H0; auto.
+      apply dom_notin_app_eq with (σ := σ) in H0.
+      rewrite H0. reflexivity.
+Qed.
+
+Lemma opt_subst_list_add : forall l1 σ n m L addl l,
+    opt_subst_type_list σ l1 n m = Some L ->
+    (create_sigma n (m - n) l) = Some addl ->
+    opt_subst_type_list ( addl ++ σ ) l1 n m = Some L.
+Proof.
+  induction l1; simpl; intros; auto.
+  destruct subst_type_opt eqn:IH1; try discriminate.
+  destruct opt_subst_type_list eqn:IH2; try discriminate.
+  inversion H; subst. clear H.
+  apply opt_subst_type_add with (addty:= addl) (l:= l) in IH1; auto.
+  rewrite IH1.
+  eapply IHl1 in IH2; eauto. rewrite IH2.
+  reflexivity.
+Qed.
+
+Lemma opt_subst_term_add : forall e1 σ n m e addl l,
+    opt_subst_type_term σ e1 n m = Some e ->
+    (create_sigma n (m - n) l) = Some addl ->
+    opt_subst_type_term ( addl ++ σ ) e1 n m = Some e.
+Proof.
+  induction e1; simpl; intros; auto.
+  -
+    destruct subst_type_opt eqn:IH; try discriminate.
+    erewrite opt_subst_type_add; eauto; clear IH.
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe1; eauto; clear IH.
+  -
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe1_1; eauto; clear IH.
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe1_2; eauto; clear IH.
+  -
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe1_1; eauto; clear IH.
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe1_2; eauto; clear IH.
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe1_3; eauto; clear IH.
+Qed.    
+
+Lemma opt_subst_type_add_range : forall typ σ n m T addty l x y,
+    subst_type_opt σ typ n m = Some T ->
+    n <= x -> y <= m ->
+    (create_sigma x (y - x) l) = Some addty ->
+    subst_type_opt ( addty ++ σ ) typ n m = Some T.
+Proof.
+  induction typ; simpl; intros; auto.
+  -
+    destruct subst_type_opt eqn:IH1; try discriminate.
+    apply IHtyp1 with (x:= x) (y:= y) (l:= l) (addty:= addty) in IH1; auto.
+    destruct (subst_type_opt σ typ2) eqn:IH2; try discriminate.
+    apply IHtyp2 with (x:= x) (y:= y) (l:= l) (addty:= addty) in IH2; auto.
+    inversion H; subst.
+    rewrite IH1, IH2. reflexivity.
+  -
+    destruct ltb eqn:IH1.
+    +
+      destruct leb eqn:IH2; try discriminate. simpl in H. simpl.
+      rewrite <- dom_notin_app_eq; auto.
+      apply ltb_lt in IH1. apply leb_gt in IH2.
+      destruct (leb n x) eqn:IH0.
+      apply leb_le in IH0.
+      apply create_dom_le with (x:= n) in H2; auto.
+      apply leb_gt in IH0.
+      apply create_dom_lt with (x:= n) in H2; auto.
+      destruct (leb x y) eqn:IH.
+      apply leb_le in IH.
+      rewrite add_sub_assoc; auto.
+      rewrite  minus_plus. apply le_lt_trans with m; auto.
+      apply leb_gt in IH.
+      apply lt_le_incl in IH.
+      apply sub_0_le in IH. rewrite IH, add_0_r.
+      apply IH0.
+    +
+      rewrite andb_false_l. rewrite andb_false_l in H.
+      inversion H. rewrite H4.
+      apply ltb_ge in IH1.
+      apply create_dom_le with (x:= n) in H2; auto.
+      rewrite <- dom_notin_app_eq; auto.
+      apply le_trans with n0; auto.
+Qed.      
+    
+Lemma opt_subst_list_add_range : forall l1 σ n m l addL L x y,
+    opt_subst_type_list σ l1 n m = Some L ->
+    n <= x -> y <= m ->
+    (create_sigma x (y - x) l) = Some addL ->
+    opt_subst_type_list ( addL ++ σ ) l1 n m = Some L.
+Proof.
+  induction l1; simpl; intros; auto.
+  destruct subst_type_opt eqn:IH1; try discriminate.
+  destruct opt_subst_type_list eqn:IH2; try discriminate.
+  inversion H; subst; clear H.
+  erewrite opt_subst_type_add_range; eauto.
+  erewrite IHl1; eauto.
+Qed.
+
+Lemma subst_type_opt_m : forall ty1 n m x σ ty2,
+    x <= m ->
+    subst_type_opt σ ty1 n m = Some ty2 ->
+    subst_type_opt σ ty1 n x = Some ty2.
+Proof.
+  induction ty1; simpl; intros; auto.
+  -
+    destruct subst_type_opt eqn:IH1; try discriminate.
+    eapply IHty1_1 in IH1; eauto.
+    destruct subst_type_opt eqn:IH2; try discriminate.
+    eapply IHty1_2 in IH2; eauto.
+    inversion H0; inversion IH1; inversion IH2; subst.
+    rewrite IH1, IH2. reflexivity.
+  -
+    destruct ltb eqn:IH1; destruct leb eqn:IH2; try discriminate;
+      simpl in H0; inversion H0; subst; try rewrite andb_false_l; auto.
+    apply ltb_lt in IH1. apply leb_gt in IH2.
+    apply le_lt_trans with (p:= n) in H; auto.
+    apply leb_gt in H. rewrite H. simpl. reflexivity.
+Qed.
+
+Lemma opt_subst_type_list_m : forall l n m x σ l',
+    x <= m ->
+    opt_subst_type_list σ l n m = Some l' ->
+    opt_subst_type_list σ l n x = Some l'.
+Proof.
+  induction l; simpl; auto; intros.
+  destruct subst_type_opt eqn:IH1; try discriminate.
+  eapply subst_type_opt_m in IH1; eauto. rewrite IH1.
+  destruct opt_subst_type_list eqn:IH2; try discriminate.
+  eapply IHl in IH2; eauto. rewrite IH2.
+  apply H0.
+Qed.
+
+Lemma opt_subst_type_term_m : forall e n m x σ e',
+    x <= m ->
+    opt_subst_type_term σ e n m = Some e' ->
+    opt_subst_type_term σ e n x = Some e'.
+Proof.
+  induction e; simpl; intros; auto.
+  -
+    destruct subst_type_opt eqn:IH1; try discriminate.
+    erewrite subst_type_opt_m; eauto.
+    destruct opt_subst_type_term eqn:IH2; try discriminate.
+    erewrite IHe; eauto.
+  -
+    destruct opt_subst_type_term eqn:IH1; try discriminate.
+    erewrite IHe1; eauto; clear IH1.
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe2; eauto.
+  -
+    destruct opt_subst_type_term eqn:IH1; try discriminate.
+    erewrite IHe1; eauto; clear IH1.
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe2; eauto; clear IH.
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe3; eauto; clear IH.
+Qed.
+
+Lemma subst_type_opt_n : forall ty1 n m x σ ty2,
+    n <= x <= m ->
+    subst_type_opt σ ty1 n m = Some ty2 ->
+    subst_type_opt σ ty1 x m = Some ty2.
+Proof.
+  induction ty1; simpl; intros; auto.
+  -
+    destruct subst_type_opt eqn:IH1; try discriminate.
+    eapply IHty1_1 in IH1; eauto.
+    destruct subst_type_opt eqn:IH2; try discriminate.
+    eapply IHty1_2 in IH2; eauto.
+    inversion H0; inversion IH1; inversion IH2; subst.
+    rewrite IH1, IH2. reflexivity.
+  -
+    destruct ltb eqn:IH1.
+    +
+      destruct leb eqn:IH2; try discriminate.
+      simpl in H0. inversion H0; subst.
+      apply ltb_lt in IH1. apply leb_gt in IH2.
+      destruct H.
+      apply le_lt_trans with (p:= n) in H1; auto. apply ltb_lt in H1.
+      rewrite H1. simpl. reflexivity.
+    +
+      rewrite andb_false_l in H0. inversion H0; subst.
+      destruct H. apply ltb_ge in IH1.
+      apply le_trans with (p:= x) in IH1; auto.
+      apply ltb_ge in IH1. rewrite IH1.
+      rewrite andb_false_l. reflexivity.
+Qed.
+
+Lemma subst_list_opt_n : forall l n m x σ l0,
+    n <= x <= m ->
+    opt_subst_type_list σ l n m = Some l0 ->
+    opt_subst_type_list σ l x m = Some l0.
+Proof.
+  induction l; simpl; intros; auto.
+  destruct subst_type_opt eqn:IH1; try discriminate.
+  destruct opt_subst_type_list eqn:IH2; try discriminate.
+  eapply subst_type_opt_n in IH1; eauto. rewrite IH1.
+  eapply IHl in IH2; eauto. rewrite IH2.
+  inversion H; subst; auto.
+Qed.    
+
+Lemma subst_term_opt_n : forall e n m x σ e0,
+    n <= x <= m ->
+    opt_subst_type_term σ e n m = Some e0 ->
+    opt_subst_type_term σ e x m = Some e0.
+Proof.
+  induction e; simpl; intros; auto.
+  -
+    destruct subst_type_opt eqn:IH1; try discriminate.
+    erewrite subst_type_opt_n; eauto.
+    destruct opt_subst_type_term eqn:IH2; try discriminate.
+    erewrite IHe; eauto.
+  -
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe1; eauto; clear IH.
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe2; eauto; clear IH.
+  -
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe1; eauto; clear IH.
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe2; eauto; clear IH.
+    destruct opt_subst_type_term eqn:IH; try discriminate.
+    erewrite IHe3; eauto; clear IH.
+Qed.
+
+Lemma create_sigma_in : forall y l1 x σ n,
+    x < n <= (x + y) ->
+    create_sigma x y l1 = Some σ ->
+    dom_sigma_in n σ = true.
+Proof.
+  induction y; simpl; intros; destruct H.
+  -
+    rewrite add_0_r in H1.
+    apply le_not_lt in H1. apply H1 in H. inversion H.
+  -
+    destruct l1; simpl in H0; try discriminate.
+    destruct create_sigma eqn:IH; try discriminate.
+    inversion H0; subst.
+    simpl.
+    destruct eqb eqn:IH0; auto.
+    eapply IHy with (x:= S x); eauto.
+    split. compute in H. apply eqb_neq in IH0.
+    apply le_lteq in H. destruct H; auto.
+    rewrite H in IH0. induction IH0. reflexivity.
+    simpl. rewrite add_succ_r in H1. apply H1.
+Qed.    
+
+Lemma dom_in_app : forall σ1 σ2 n typ,
+    dom_sigma_in n σ1 = true ->
+    match_natlist (σ1 ++ σ2) n typ = match_natlist σ1 n typ.
+Proof.
+  induction σ1; simpl; intros; auto.
+  -
+    inversion H; subst.
+  -
+    destruct a. rewrite eqb_sym. destruct eqb; auto.
+Qed.
+
+Lemma subst_type_create_swap : forall ty1 l1 add1 l2 add2 x y z σ,
+    x <= y <= z ->
+    create_sigma x (y - x) l1 = Some add1 ->
+    create_sigma y (z - y) l2 = Some add2 ->
+    subst_type (add1 ++ add2 ++ σ) ty1 = subst_type (add2 ++ add1 ++ σ) ty1.
+Proof.
+  induction ty1; simpl; intros; auto.
+  -
+   erewrite IHty1_1, IHty1_2; eauto.
+  -
+    destruct H.
+    destruct (n <=? x) eqn:IH1.
+    +
+      apply leb_le in IH1.
+      apply create_dom_le with (x:=n) in H0; auto.
+      apply create_dom_le with (x:= n) in H1; auto. generalize H0; intros.
+      eapply dom_notin_app with (σ1:= add1) (σ2:= add2) in H0; eauto.
+      eapply dom_notin_app with (σ1:= add2) (σ2:= add1) in H3; eauto.
+      rewrite <- app_assoc_reverse.
+      rewrite <- dom_notin_app_eq with (ad := add1 ++ add2); auto.
+      rewrite <- app_assoc_reverse.
+      rewrite <- dom_notin_app_eq with (ad := add2 ++ add1); auto.
+      apply le_trans with x; auto.
+    +
+      apply leb_gt in IH1.
+      destruct (leb n y) eqn:IH2.
+      *
+        apply leb_le in IH2.
+        apply create_dom_le with (x:= n) in H1; auto.
+        rewrite <- dom_notin_app_eq with (ad := add2); auto.
+        apply create_sigma_in with (n:= n) in H0.
+        generalize H0; intros.
+        apply dom_in_app with (σ2:= (add2 ++ σ)) (typ:= (TyVar n)) in H0.
+        apply dom_in_app with (σ2:= (σ)) (typ:= (TyVar n)) in H3. rewrite H3.
+        rewrite H0. reflexivity.
+        split; auto.
+        rewrite add_sub_assoc; auto. rewrite minus_plus.
+        apply IH2.
+      *
+        apply leb_gt in IH2.
+        apply create_dom_lt with (x:= n) in H0; auto.
+        destruct (n <=? z) eqn:IH3.
+        **
+          apply leb_le in IH3.
+          apply create_sigma_in with (n:= n) in H1; auto.
+          rewrite <- app_assoc_reverse.
+          rewrite <- app_assoc.
+          rewrite <- dom_notin_app_eq with (ad := add1); auto.
+          rewrite dom_in_app with (σ2:= (add1 ++ σ)) (typ:= (TyVar n)); auto.
+          apply dom_in_app with (σ2:= (σ)) (typ:= (TyVar n)); auto.
+          split; auto.
+          rewrite add_sub_assoc; auto.
+          rewrite minus_plus. apply IH3.
+        **
+          apply leb_gt in IH3.
+          apply create_dom_lt with (x:=n) in H1; auto.
+          rewrite <- dom_notin_app_eq with (ad := add1); auto.
+          repeat rewrite <- dom_notin_app_eq with (ad := add2); auto.
+          rewrite <- dom_notin_app_eq with (ad := add1); auto.
+          rewrite add_sub_assoc; auto.
+          rewrite minus_plus. apply IH3.
+        **
+          rewrite add_sub_assoc; auto.
+          rewrite minus_plus. apply IH2.
+Qed.          
+
+Theorem T22_3_7 : forall e Γ S1 C σ T n m Γ' e',
+    opt_subst_type_list σ Γ n m = Some Γ' ->
+    opt_subst_type_term σ e n m = Some e' ->
+    Γ' |- e' \in T ->
+    Γ |-- n ` e \in S1 | m ` C ->
+    (forall x, n < x <= m -> dom_sigma_in x σ = false) ->
+    exists l l', create_sigma n (m - n) l = Some l' /\
+    subst_type (l' ++ σ) S1 = T /\ Constrais_sol_bool (l' ++ σ) C = true.
+Proof.
+  intros. generalize dependent T. generalize dependent σ.
+  generalize dependent Γ'. generalize dependent e'.
+  induction H2; intros.
+  -
+    simpl in H1.
+    inversion H1; subst.
+    inversion H2; subst.
+    exists nil, nil. simpl. split; auto.
+    rewrite sub_diag. simpl. reflexivity.
+    split.
+    rewrite opt_subst_type_list_refl in H0. inversion H0; subst.
+    eapply getbind_sub in H; eauto.
+    reflexivity.
+  -
+    simpl in H0.
+    destruct subst_type_opt eqn:IH1; try discriminate.
+    destruct opt_subst_type_term eqn:IH2; try discriminate.
+    inversion H0; subst. clear H0. inversion H1; subst; clear H1.
+    eapply IHConstrait_Type in H8; simpl; eauto.
+    destruct H8. destruct H0. destruct H0. destruct H1.
+    exists x0. exists x1. split; try split; auto.
+    rewrite H1.
+    eapply opt_subst_type_dom_notin in H0; eauto. rewrite H0.
+    reflexivity.
+    rewrite IH1. rewrite H. reflexivity.
+  -
+    simpl in H0.
+    destruct opt_subst_type_list eqn:IH1; try discriminate.
+    destruct opt_subst_type_term eqn:IH2; try discriminate.
+    destruct (opt_subst_type_term σ t2) eqn:IH3; try discriminate.
+    inversion H0; subst. clear H0.
+    inversion H1; subst.
+    eapply IHConstrait_Type1 with (σ := σ) in H5; eauto.
+    destruct H5. destruct H0. destruct H0. destruct H2.
+    eapply IHConstrait_Type2 with (σ := σ) in H7; eauto.
+    clear IHConstrait_Type1; clear IHConstrait_Type2.
+    destruct H7. destruct H5. destruct H5. destruct H6.
+    +
+      exists (x ++ x1 ++ [T]). exists (x0 ++ x2 ++ [( S F'', T)] ).
+      split; try split; auto.
+      apply CT_n_lt in H2_. apply CT_n_lt in H2_0.
+      apply create_sigma_app with (m := F'' - F') (l2 := x1) (s2 := x2) in H0; auto.
+      rewrite add_sub_assoc in H0; auto.
+      rewrite <- add_sub_swap in H0; auto.
+      generalize (le_trans _ _ _ H2_ H2_0). intros.
+      rewrite <- add_sub_assoc in H0; auto.
+      rewrite minus_plus in H0.
+      assert (create_sigma F'' (1) [T] =Some [(S F'', T)]).
+      reflexivity.
+      apply create_sigma_app with (m:= 1) (l2:= [T]) (s2:= [(S F'', T)]) in H0; auto.
+      rewrite add_1_r in H0. rewrite <- add_1_l in H0. rewrite <- add_1_l.
+      rewrite add_sub_assoc in H0; auto.
+      rewrite app_assoc. rewrite app_assoc. apply H0.
+      rewrite add_sub_assoc; auto. rewrite minus_plus. apply H9.
+      rewrite <- le_plus_minus; auto. simpl.
+      apply create_dom_lt with (x:= S F'') in H0.
+      apply create_dom_lt with (x:= S F'') in H5.
+      apply dom_notin_app with (σ2:= x2) in H0; eauto.
+      apply dom_notin_app_eq with (σ := [(S F'', T)] ++ σ) in H0.
+      simpl in H0. rewrite eqb_refl in H0.
+      rewrite <- app_assoc in H0.
+      repeat rewrite <- app_assoc.
+      simpl. rewrite <- H0. reflexivity.
+      apply CT_n_lt in H2_, H2_0.
+      rewrite add_sub_assoc; auto. rewrite minus_plus; auto.
+      apply CT_n_lt in H2_, H2_0.
+      rewrite add_sub_assoc; auto. rewrite minus_plus; auto.
+      apply le_lt_trans with F''; auto.
+      admit.
+    +
+      clear IHConstrait_Type1; clear IHConstrait_Type2.
+      apply CT_n_lt in H2_. apply CT_n_lt in H2_0.
+      inversion H; subst; clear H.
+      apply subst_list_opt_n with F; auto.
+      apply opt_subst_type_list_m with (S F''); auto.
+    +
+      clear IHConstrait_Type1; clear IHConstrait_Type2.
+      apply CT_n_lt in H2_. apply CT_n_lt in H2_0.
+      inversion H; subst; clear H.
+      apply opt_subst_type_term_m with (S F''); auto.
+      apply subst_term_opt_n with F; auto.
+    +
+      clear IHConstrait_Type1; clear IHConstrait_Type2.
+      apply CT_n_lt in H2_. apply CT_n_lt in H2_0.
+      inversion H; subst; clear H.
+      intros. apply H3.
+      destruct H.
+      split; auto. apply le_lt_trans with F'; auto.
+    +
+      clear IHConstrait_Type1; clear IHConstrait_Type2.
+      apply CT_n_lt in H2_. apply CT_n_lt in H2_0.
+      inversion H; subst; clear H.
+      apply opt_subst_type_list_m with (S F''); eauto.
+    +
+      clear IHConstrait_Type1; clear IHConstrait_Type2.
+      apply CT_n_lt in H2_. apply CT_n_lt in H2_0.
+      inversion H; subst; clear H.
+      apply opt_subst_type_term_m with (S F''); eauto.
+    +
+      clear IHConstrait_Type1; clear IHConstrait_Type2.
+      apply CT_n_lt in H2_. apply CT_n_lt in H2_0.
+      inversion H; subst; clear H.
+      intros. apply H3.
+      destruct H. split; auto.
+      apply le_trans with F'; auto.
+  -
+    simpl in H0. inversion H0; subst. inversion H1; subst. exists [], [].
+    simpl. rewrite sub_diag. simpl. split; auto.
+  -
+    simpl in H0. inversion H0; subst. inversion H1; subst. exists [], [].
+    simpl. rewrite sub_diag. simpl. split; auto.
+  -
+    simpl in H0.
+    destruct opt_subst_type_list eqn:IH1; try discriminate.
+
+    destruct opt_subst_type_term eqn:IH2; try discriminate.
+    destruct (opt_subst_type_term σ e2) eqn:IH3; try discriminate.
+    destruct (opt_subst_type_term σ e3) eqn:IH4; try discriminate.
+    inversion H0; subst; clear H0.
+    inversion H1; subst; clear H1.
+    eapply IHConstrait_Type1 with (σ := σ) in H6; auto; clear IHConstrait_Type1.
+    destruct H6. destruct H0. destruct H0. destruct H1.
+    eapply IHConstrait_Type2 with (σ := σ) in H8; auto; clear IHConstrait_Type2.
+    destruct H8. destruct H4. destruct H4. destruct H5.
+    eapply IHConstrait_Type3 with (σ := σ) in H9; auto; clear IHConstrait_Type3.
+    destruct H9. destruct H7. destruct H7. destruct H8.
+    +
+      apply CT_n_lt in H2_. apply CT_n_lt in H2_0. apply CT_n_lt in H2_1.
+      exists (x ++ x1 ++ x3). exists (x0 ++ x2 ++ x4). repeat split.
+      ++
+        apply create_sigma_app with (m:= F2 - F1) (l2:= x1) (s2:= x2) in H0.
+        apply create_sigma_app with (m:= F3 - F2) (l2:= x3) (s2:= x4) in H0.
+      *
+        repeat rewrite <- app_assoc in H0.
+        rewrite <- H0.
+        rewrite <- add_sub_swap; auto.
+        rewrite add_sub_assoc; auto.
+        rewrite add_sub_assoc; auto.
+        rewrite minus_plus.
+        rewrite <- add_sub_assoc; auto.
+        rewrite <- add_sub_swap; auto.
+        rewrite add_sub_assoc; auto.
+        rewrite minus_plus. reflexivity.
+        apply le_trans with F1; auto.
+      *
+        rewrite <- H7.
+        rewrite <- add_sub_swap; auto.
+        rewrite add_sub_assoc; auto.
+        rewrite minus_plus.
+        rewrite add_sub_assoc; auto.
+        rewrite minus_plus. reflexivity.
+        apply le_trans with F1; auto.
+        apply le_add_r.
+      *
+        rewrite <- H4.
+        rewrite add_sub_assoc; auto.
+        rewrite minus_plus. reflexivity.
+      ++
+        admit.
+      ++
+        admit.
+    +
+      apply CT_n_lt in H2_. apply CT_n_lt in H2_0. apply CT_n_lt in H2_1.
+      inversion H; subst; clear H; clear H0.
+      apply subst_list_opt_n with F; auto.
+      split; auto. apply le_trans with F1; auto.
+    +
+      apply CT_n_lt in H2_;apply CT_n_lt in H2_0; apply CT_n_lt in H2_1.
+      apply subst_term_opt_n with F; auto.
+      split; auto. apply le_trans with F1; auto.
+    +
+      apply CT_n_lt in H2_;apply CT_n_lt in H2_0; apply CT_n_lt in H2_1.
+      intros. apply H3.
+      destruct H7. split; auto.
+      apply le_lt_trans with F2; auto.
+      apply le_trans with F1; auto.
+    +
+      apply CT_n_lt in H2_;apply CT_n_lt in H2_0; apply CT_n_lt in H2_1.
+      inversion H; subst; clear H; clear H0.
+      apply subst_list_opt_n with F; auto.
+      apply opt_subst_type_list_m with F3; auto.
+    +
+      apply CT_n_lt in H2_;apply CT_n_lt in H2_0; apply CT_n_lt in H2_1.
+      apply subst_term_opt_n with F; auto.
+      apply opt_subst_type_term_m with F3; auto.
+    +
+      apply CT_n_lt in H2_;apply CT_n_lt in H2_0; apply CT_n_lt in H2_1.
+      intros. apply H3.
+      destruct H4. split; auto.
+      apply le_lt_trans with F1; auto.
+      apply le_trans with F2; auto.
+    +
+      apply CT_n_lt in H2_;apply CT_n_lt in H2_0; apply CT_n_lt in H2_1.
+      inversion H; subst; clear H.
+      apply opt_subst_type_list_m with F3; auto.
+      apply le_trans with F2; auto.
+    +
+      apply CT_n_lt in H2_;apply CT_n_lt in H2_0; apply CT_n_lt in H2_1.
+      inversion H; subst; clear H.
+      apply opt_subst_type_term_m with F3; auto.
+      apply le_trans with F2; auto.
+    +
+      apply CT_n_lt in H2_;apply CT_n_lt in H2_0; apply CT_n_lt in H2_1.
+      intros. destruct H0.
+      apply H3. split; auto.
+      apply le_trans with F1; auto.
+      apply le_trans with F2; auto.
+Abort.
