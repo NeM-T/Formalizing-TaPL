@@ -1,5 +1,5 @@
 # Formalizing TaPL
-あきるor諦めるまでTaPLの定理証明支援系で形式化をします。  
+あきるor諦めるまでTaPLを定理証明支援系で形式化をします。  
 使用言語：Coq, Lean3  
 パーサー付きのものもある。  
 〜chap8　：The Coq Proof Assistant:version 8.11.2   
@@ -16,3 +16,4 @@ chap11〜 ：The Coq Proof Assistant:version 8.13.0
 - [x] Chap.10(hastype_lambda/deBruijn)(パーサーなし)
 - [ ] Chap.11(fullsimpl/chap11)(パーサーなし)
 - [ ] Chap.22(recon/)(パーサーなし)
+- [ ] Chap.23(systemF/chap23.v)
