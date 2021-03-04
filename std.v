@@ -2,8 +2,13 @@ From Coq Require Import Arith.Arith.
 From Coq Require Import Bool.Bool.
 Require Export Coq.Strings.String.
 From Coq Require Import Logic.FunctionalExtensionality.
+Require Coq.extraction.Extraction.
 From Coq Require Import Lists.List.
 Import ListNotations.
+Require Export ExtrOcamlChar.
+Extract Inductive bool => "bool" ["true" "false"].
+Extract Inductive list => "list" [ "[]" "(::)" ].
+Extraction Language OCaml.
 
 Notation eqb_eq_str := String.eqb_eq.
 Definition total_map (A : Type) := string -> A.

@@ -6,19 +6,19 @@ Definition tyid := nat.
 Inductive type : Set :=
 | tyvar : tyid -> type
 | arrow : type -> type -> type
-| all : type -> type.
+| Π : type -> type.
 
 Inductive exp : Set :=
 | var : nat -> exp
 | abs : type -> exp -> exp
 | app : exp -> exp -> exp
-| tabs : exp -> exp
+| Λ : exp -> exp
 | tapp : exp -> type -> exp.
 
 Definition isval e :=
   match e with
   | abs _ _ => true
-  | tabs _ => true
+  | Λ _ => true
   | _ => false
   end.
 
@@ -32,7 +32,7 @@ Fixpoint shift_type d c ty :=
   match ty with
   | tyvar n => tyvar (if c <=? n then (n + d) else n)
   | arrow ty1 ty2 => arrow (shift_type d c ty1) (shift_type d c ty2)
-  | all ty1 => all (shift_type d (S c) ty1)
+  | Π ty1 => Π (shift_type d (S c) ty1)
   end.
 
 Fixpoint subst_type (d: nat) (ty1 ty2: type) :=
@@ -41,7 +41,7 @@ Fixpoint subst_type (d: nat) (ty1 ty2: type) :=
     if d =? n then shift_type 0 d ty2
     else if d <? n then tyvar (pred n) else (tyvar n)
   | arrow t1 t2 => arrow (subst_type d t1 ty2) (subst_type d t2 ty2)
-  | all t1 => all (subst_type (S d) t1 ty2)
+  | Π t1 => Π (subst_type (S d) t1 ty2)
   end.
 
 Fixpoint shift_exp (d c : nat) (t : exp) :=
@@ -49,7 +49,7 @@ match t with
 | var x => var (if c <=? x then x + d else x)
 | abs ty e1 => abs (shift_type d c ty) (shift_exp d (S c) e1)
 | app e1 e2 => app (shift_exp d c e1) (shift_exp d c e2)
-| tabs e1 => tabs (shift_exp d (S c) e1)
+| Λ e1 => Λ (shift_exp d (S c) e1)
 | tapp e1 ty1 => tapp (shift_exp d c e1) (shift_type d c ty1)
 end.
 
@@ -60,7 +60,7 @@ match t with
                 else var x
 | abs ty e1 => abs ty (subst_exp (S d) s e1)
 | app e1 e2 => app (subst_exp d s e1) (subst_exp d s e2)
-| tabs e1 => tabs (subst_exp (S d) s e1)
+| Λ e1 => Λ (subst_exp (S d) s e1)
 | tapp e1 ty => tapp (subst_exp d s e1) ty
 end.
 
@@ -71,7 +71,7 @@ Fixpoint subst_ty_exp (d: nat) (ty: type) (e: exp) : exp :=
   | var _ => e
   | abs ty1 e1 => abs (subst_type d ty1 ty) (subst_ty_exp (S d) ty e1)
   | app e1 e2 => app (subst_ty_exp d ty e1) (subst_ty_exp d ty e2)
-  | tabs e1 => tabs (subst_ty_exp d ty e1)
+  | Λ e1 => Λ (subst_ty_exp d ty e1)
   | tapp e1 ty2 => tapp (subst_ty_exp d ty e1) (subst_type d ty2 ty)
   end.
 
@@ -97,7 +97,7 @@ Fixpoint eval_exp e : option exp :=
       | None => None
       end
     end
-  | tapp (tabs e1) ty => Some ( [[ 0 |--> ty ]] e1 )
+  | tapp (Λ e1) ty => Some ( [[ 0 |--> ty ]] e1 )
   | tapp e1 ty =>
     match eval_exp e1 with
     | Some e1' => Some (tapp e1' ty)
@@ -117,7 +117,7 @@ Fixpoint eqb_type ty1 ty2 :=
   match ty1, ty2 with
   | tyvar n1, tyvar n2 => n1 =? n2
   | arrow t1 t2, arrow t1' t2' => (eqb_type t1 t1') && (eqb_type t2 t2')
-  | all t1, all t2 => eqb_type t1 t2
+  | Π t1, Π t2 => eqb_type t1 t2
   | _, _ => false
   end.
 
@@ -139,21 +139,21 @@ Fixpoint type_of (Γ: context) (e: exp) : option type :=
       if eqb_type ty1 ty2 then (Some ty) else None
     | _, _ => None
     end
-  | tabs e1 =>
+  | Λ e1 =>
     match type_of (tyvarbind :: Γ) e1 with
-    | Some ty => Some (all ty)
+    | Some ty => Some (Π ty)
     | None => None
     end
   | tapp e1 T2 =>
     match type_of Γ e1 with
-    | Some (all ty1) => Some ( subst_type 0 ty1 T2)
+    | Some (Π ty1) => Some ( subst_type 0 ty1 T2)
     | _ => None
     end
   end.
 
 Inductive value : exp -> Prop :=
 | AbsV : forall ty e, value (abs ty e)
-| TAbsV : forall e, value (tabs e).
+| TAbsV : forall e, value (Λ e).
 
 Reserved Notation "e1 --> e2" (at level 50).
 Inductive onestep : exp -> exp -> Prop :=
@@ -166,7 +166,7 @@ Inductive onestep : exp -> exp -> Prop :=
 | E_TApp : forall e1 e2 ty,
     e1 --> e2 -> (tapp e1 ty) --> (tapp e2 ty)
 | E_TAppAbs : forall e ty,
-    (tapp (tabs e) ty) --> [[ 0 |--> ty]]e
+    (tapp (Λ e) ty) --> [[ 0 |--> ty]]e
 where "e1 --> e2" := (onestep e1 e2).
 
 Reserved Notation "Γ |- e \in ty" (at level 40).
@@ -183,9 +183,9 @@ Inductive has_type : context -> exp -> type -> Prop :=
     Γ |- (app e1 e2) \in ty2
 | T_TAbs : forall e ty Γ,
     (tyvarbind :: Γ) |- e \in ty ->
-    Γ |- tabs e \in all ty
+    Γ |- Λ e \in Π ty
 | T_TApp : forall Γ e1 ty1 ty2,
-    Γ |- e1 \in all ty1 ->
+    Γ |- e1 \in Π ty1 ->
     Γ |- tapp e1 ty2 \in subst_type 0 ty1 ty2
 where "Γ |- e \in ty " := (has_type Γ e ty).
 
