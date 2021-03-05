@@ -22,11 +22,7 @@ Definition isval e :=
   | _ => false
   end.
 
-Inductive bind : Set :=
-| tybind : type -> bind
-| tyvarbind : bind.
-
-Definition context := (list bind).
+Definition context := (list type).
 
 Fixpoint shift_type d c ty :=
   match ty with
@@ -44,18 +40,39 @@ Fixpoint subst_type (d: nat) (ty1 ty2: type) :=
   | Π t1 => Π (subst_type (S d) t1 ty2)
   end.
 
+Fixpoint shift_ty_exp (d c: nat) (e: exp) :=
+  match e with
+  | var _ => e
+  | app e1 e2 => app (shift_ty_exp d c e1) (shift_ty_exp d c e2)
+  | abs ty e1 => abs (shift_type d c ty) (shift_ty_exp d c e1)
+  | tapp e1 ty => tapp (shift_ty_exp d c e1) (shift_type d c ty)
+  | Λ e1 => Λ (shift_ty_exp d (S c) e1)
+  end.
+  
+
+Fixpoint subst_ty_exp (d: nat) (ty: type) (e: exp) : exp :=
+  match e with
+  | var _ => e
+  | abs ty1 e1 => abs (subst_type d ty1 ty) (subst_ty_exp d ty e1)
+  | app e1 e2 => app (subst_ty_exp d ty e1) (subst_ty_exp d ty e2)
+  | Λ e1 => Λ (subst_ty_exp (S d) ty e1)
+  | tapp e1 ty2 => tapp (subst_ty_exp d ty e1) (subst_type d ty2 ty)
+  end.
+
+Notation " [[ X |-->  T2 ]] t1 " := (subst_ty_exp X T2 t1) (at level 50).
+
 Fixpoint shift_exp (d c : nat) (t : exp) :=
 match t with
 | var x => var (if c <=? x then x + d else x)
 | abs ty e1 => abs (shift_type d c ty) (shift_exp d (S c) e1)
 | app e1 e2 => app (shift_exp d c e1) (shift_exp d c e2)
-| Λ e1 => Λ (shift_exp d (S c) e1)
-| tapp e1 ty1 => tapp (shift_exp d c e1) (shift_type d c ty1)
+| Λ e1 => Λ (shift_exp d c e1)
+| tapp e1 ty1 => tapp (shift_exp d c e1) ty1
 end.
 
 Fixpoint subst_exp (d : nat) (s t: exp) : exp :=
 match t with
-| var x => if d =? x then shift_exp 0 d s
+| var x => if d =? x then shift_exp 0 d (shift_ty_exp 0 d s)
            else if d <? x then var (pred x)
                 else var x
 | abs ty e1 => abs ty (subst_exp (S d) s e1)
@@ -65,17 +82,6 @@ match t with
 end.
 
 Notation " [[ X \ t2 ]] t1 " := (subst_exp X t2 t1) (at level 50).
-
-Fixpoint subst_ty_exp (d: nat) (ty: type) (e: exp) : exp :=
-  match e with
-  | var _ => e
-  | abs ty1 e1 => abs (subst_type d ty1 ty) (subst_ty_exp (S d) ty e1)
-  | app e1 e2 => app (subst_ty_exp d ty e1) (subst_ty_exp d ty e2)
-  | Λ e1 => Λ (subst_ty_exp d ty e1)
-  | tapp e1 ty2 => tapp (subst_ty_exp d ty e1) (subst_type d ty2 ty)
-  end.
-
-Notation " [[ X |-->  T2 ]] t1 " := (subst_ty_exp X T2 t1) (at level 50).
 
 Fixpoint eval_exp e : option exp :=
   match e with
@@ -125,11 +131,11 @@ Fixpoint type_of (Γ: context) (e: exp) : option type :=
   match e with
   | var n =>
     match nth_opt Γ n with
-    | Some (tybind ty) => Some ty
+    | Some ty => Some ty
     | _ => None
     end
   | abs ty e1 =>
-    match type_of (tybind (ty) :: Γ) e1 with
+    match type_of (ty :: Γ) e1 with
     | Some ty2 => Some (arrow ty ty2)
     | None => None
     end
@@ -140,7 +146,7 @@ Fixpoint type_of (Γ: context) (e: exp) : option type :=
     | _, _ => None
     end
   | Λ e1 =>
-    match type_of (tyvarbind :: Γ) e1 with
+    match type_of (map (shift_type 1 0) Γ) e1 with
     | Some ty => Some (Π ty)
     | None => None
     end
@@ -150,6 +156,15 @@ Fixpoint type_of (Γ: context) (e: exp) : option type :=
     | _ => None
     end
   end.
+
+Section exapmle.
+
+Let e1 := (Λ (abs (tyvar 0) (var 0) )).
+Compute (type_of [] e1).
+Compute (eval_exp (tapp e1 (tyvar 1))).
+
+End exapmle.
+
 
 Inductive value : exp -> Prop :=
 | AbsV : forall ty e, value (abs ty e)
@@ -172,17 +187,17 @@ where "e1 --> e2" := (onestep e1 e2).
 Reserved Notation "Γ |- e \in ty" (at level 40).
 Inductive has_type : context -> exp -> type -> Prop :=
 | T_Var : forall n Γ ty,
-    nth_opt Γ n = Some (tybind ty) ->
+    nth_opt Γ n = Some ty ->
     Γ |- (var n) \in ty
 | T_Abs : forall Γ ty e T,
-    (tybind T :: Γ) |- e \in ty ->
+    (T :: Γ) |- e \in ty ->
     Γ |- (abs T e) \in (arrow T ty)
 | T_App : forall e1 e2 Γ ty1 ty2,
     Γ |- e1 \in arrow ty1 ty2 ->
     Γ |- e2 \in ty1 ->
     Γ |- (app e1 e2) \in ty2
 | T_TAbs : forall e ty Γ,
-    (tyvarbind :: Γ) |- e \in ty ->
+    (map (shift_type 1 0) Γ) |- e \in ty ->
     Γ |- Λ e \in Π ty
 | T_TApp : forall Γ e1 ty1 ty2,
     Γ |- e1 \in Π ty1 ->
@@ -287,7 +302,6 @@ Proof.
     induction e; simpl; intros.
     +
       constructor. destruct nth_opt eqn:IH; try discriminate; auto.
-      destruct b; try discriminate. inversion H; subst; reflexivity.
     +
       destruct type_of eqn:IH; try discriminate.
       inversion H; subst. constructor; eauto.
@@ -359,7 +373,7 @@ Proof.
   -
     rewrite IHe; reflexivity.
   -
-    rewrite IHe, shift_ty0; reflexivity.
+    rewrite IHe; reflexivity.
 Qed.    
 
 Lemma appnth : forall (ctx ctx': context) n,
@@ -375,9 +389,109 @@ Lemma length1_Some : forall n (ctx ctx1 ctx2: context) T,
     nth_opt (ctx ++ ctx2) n = Some T.
 Proof.
   induction n; simpl; intros. destruct ctx. inversion H. simpl. simpl in H0. apply H0.
-  destruct ctx. inversion H. simpl. destruct ( (b :: ctx) ++ ctx1) eqn:IHH. inversion H0. inversion IHH; subst.
+  destruct ctx. inversion H. simpl. destruct ( (t0 :: ctx) ++ ctx1) eqn:IHH. inversion H0. inversion IHH; subst.
   eapply IHn in H0. apply H0. simpl in H. apply lt_S_n in H. apply H.
 Qed.
+
+Lemma nth_opt_Some_lt : forall {A: Type} n (Γ: list A) x,
+    nth_opt Γ n = Some x -> n < length Γ.
+Proof.
+  induction n; simpl; intros.
+  -
+    destruct Γ; simpl in H.
+    inversion H.
+    inversion H; subst. simpl.
+    apply lt_0_succ.
+  -
+    destruct Γ. inversion H.
+    simpl in H.
+    apply IHn in H.
+    simpl. apply lt_n_S.
+    apply H.
+Qed.    
+
+Lemma nth_opt_non_shift : forall Γ n m x,
+    nth_opt Γ x = None ->
+    nth_opt (map (shift_type n m) Γ) x = None.
+Proof.
+  induction Γ; simpl; intros.
+  destruct x; auto.
+  destruct x; try discriminate H.
+  apply IHΓ. apply H.
+Qed.
+
+Lemma shift_map_gamma : forall Γ n m x Δ,
+  nth_opt Γ x = nth_opt Δ x ->
+  nth_opt (map (shift_type n m) Γ) x = nth_opt (map (shift_type n m) Δ) x.
+Proof.
+  induction Γ; intros.
+  simpl in H. simpl.
+  destruct Δ.
+  destruct x; auto.
+  destruct x; simpl in H; auto.
+  inversion H. simpl.
+  symmetry; apply nth_opt_non_shift. rewrite H. reflexivity.
+  destruct x; simpl in H; simpl.
+  destruct Δ; simpl in H; inversion H; subst.
+  simpl. reflexivity.
+  destruct Δ. simpl in H. simpl. 
+  simpl.
+  apply nth_opt_non_shift. apply H.
+  simpl. simpl in H.
+  apply IHΓ. apply H.
+Qed.
+
+Lemma weakend : forall Γ e ty Δ,
+    (forall x, x < length Γ -> nth_opt Γ x = nth_opt Δ x) ->
+    Γ |- e \in ty -> Δ |- e \in ty.
+Proof.
+  intros. generalize dependent Δ. induction H0; simpl; intros.
+  -
+    constructor.
+    rewrite <- H0. apply H.
+    apply nth_opt_Some_lt in H. apply H.
+  -
+    constructor. apply IHhas_type; intros.
+    clear IHhas_type; clear H0.
+    destruct x; simpl. reflexivity.
+    apply H. apply lt_S_n. apply H1.
+  -
+    econstructor; eauto.
+  -
+    constructor. apply IHhas_type; intros.
+    apply shift_map_gamma.
+    apply H. rewrite map_length in H1. apply H1.
+  -
+    econstructor; eauto.
+Qed.
+
+Lemma sub_pre : forall e Γ ty n T,
+    Γ |- e \in ty ->
+    (map (fun t' => subst_type n t' T) Γ) |- (subst_ty_exp n T e) \in subst_type n ty T.
+Proof.
+  intros. revert n; revert T.
+  induction H; simpl; intros.
+  -
+    constructor.
+    revert H; revert Γ.
+    induction n; intros.
+    destruct Γ; simpl in H. inversion H.
+    inversion H; subst. simpl. reflexivity.
+    destruct Γ; simpl in H. inversion H.
+    apply IHn. apply H.
+  -
+    constructor.
+    simpl in IHhas_type.
+    apply IHhas_type.
+  -
+    econstructor; eauto.
+  -
+    constructor.
+    admit.
+  -
+    (* apply (T_TApp (map (fun t' => subst_type n t' T) Γ) ([[n |--> T]]e1) (subst_type n ty2 T) ). *)
+    admit.
+Abort.
 
 Lemma shifting : forall e g g1 g2 T,
   (g1 ++ g) |- e \in T ->
@@ -393,15 +507,12 @@ Proof.
     constructor. apply H2.
     apply leb_gt in IH. eapply length1_Some in IH. apply IH. apply H2.
   -
-    apply IHe with (g1:= (tybind t0 :: g1)) (g2:= g2) in H4.
-    simpl in H4.
-    apply T_Abs in H4.
     admit.
   -
     econstructor; eauto.
-    apply IHe with (g1:= tyvarbind :: g1). apply H2.
-  -
-    apply IHe with (g2:= g2) in H4.
+    rewrite map_app in H2.
+    rewrite map_app.
+    admit.
 Abort.
 
 Theorem T23_5_1 : forall e Γ ty e',

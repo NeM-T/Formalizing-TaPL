@@ -610,6 +610,73 @@ Proof.
     apply shifting_rev with (g1:= nil) in H2. simpl in H2. apply H2.
 Qed.
 
+Reserved Notation "ctx '|-β' t '\in' T" (at level 40).
+Inductive has_type_nonseq : context -> term -> ty -> Prop :=
+| Tb_True: forall ctx,
+      ctx |-β tru \in Bool
+| Tb_False: forall ctx,
+      ctx |-β fls \in Bool
+| Tb_If: forall ctx t1 t2 t3 T',
+      ctx |-β t1 \in Bool ->
+      ctx |-β t2 \in T' ->
+      ctx |-β t3 \in T' ->
+      ctx |-β (If t1 t2 t3) \in T'
+| Tb_Var: forall ctx n1 t,
+      getbinding n1 ctx = Some t ->
+      ctx |-β (var n1) \in t
+| Tb_Abs: forall ctx x T1 t2 T2,
+      ((x, T1) :: ctx) |-β t2 \in T2 ->
+      ctx |-β (abs x T1 t2) \in (T1 |--> T2)
+| Tb_App: forall ctx t1 T11 T12 t2,
+      ctx |-β t1 \in (T11 |--> T12) ->
+      ctx |-β t2 \in T11 ->
+      ctx |-β app t1 t2 \in T12
+| Tb_Unit: forall ctx,
+    ctx |-β unit \in Unit
+| Tb_Seq : forall ctx t1 t2 T2,
+    ctx |-β t1 \in Unit ->
+    ctx |-β t2 \in T2 ->
+    ctx |-β (seq t1 t2) \in T2
+
+where " ctx '|-β' x '\in' t " := (has_type_nonseq ctx x t).
+
+Lemma L9_3_8: forall t s x Ts T ctx,
+    ((x, Ts) :: ctx) |- t \in T ->
+    ctx |- s \in Ts ->
+    (ctx) |- subst 0 s t \in T.
+Proof.
+  induction t; intros; inversion H; subst; clear H; try solve [econstructor; eauto]; simpl.
+  -
+    destruct n.
+    +
+      simpl in H3. inversion H3; subst. apply H0.
+    +
+      generalize (Nat.lt_0_succ n); intros. apply Nat.ltb_lt in H. rewrite H.
+      simpl. simpl in H3. apply T_Var. apply H3.
+  -
+    apply T_Abs.
+Admitted.
+
+
+Theorem T9_3_9 : forall t t' T ctx,
+    ctx |-β t \in T ->
+    t -->i t' ->
+    ctx |-β t' \in T.
+Proof.
+  intros. generalize dependent t'. induction H; intros; try solve_by_invert.
+  -
+    inversion H2; subst; auto.
+    apply IHhas_type_nonseq1 in H7. constructor; auto.
+  -
+    inversion H1; subst.
+    +
+      apply IHhas_type_nonseq1 in H5. econstructor; eauto.
+    +
+      apply IHhas_type_nonseq2 in H6. econstructor; eauto.
+    +
+      inversion H; subst.
+Abort.
+
 End E11_1.
 
 End deBruijin.
