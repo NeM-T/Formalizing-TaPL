@@ -610,71 +610,86 @@ Proof.
     apply shifting_rev with (g1:= nil) in H2. simpl in H2. apply H2.
 Qed.
 
-Reserved Notation "ctx '|-β' t '\in' T" (at level 40).
-Inductive has_type_nonseq : context -> term -> ty -> Prop :=
-| Tb_True: forall ctx,
-      ctx |-β tru \in Bool
-| Tb_False: forall ctx,
-      ctx |-β fls \in Bool
-| Tb_If: forall ctx t1 t2 t3 T',
-      ctx |-β t1 \in Bool ->
-      ctx |-β t2 \in T' ->
-      ctx |-β t3 \in T' ->
-      ctx |-β (If t1 t2 t3) \in T'
-| Tb_Var: forall ctx n1 t,
-      getbinding n1 ctx = Some t ->
-      ctx |-β (var n1) \in t
-| Tb_Abs: forall ctx x T1 t2 T2,
-      ((x, T1) :: ctx) |-β t2 \in T2 ->
-      ctx |-β (abs x T1 t2) \in (T1 |--> T2)
-| Tb_App: forall ctx t1 T11 T12 t2,
-      ctx |-β t1 \in (T11 |--> T12) ->
-      ctx |-β t2 \in T11 ->
-      ctx |-β app t1 t2 \in T12
-| Tb_Unit: forall ctx,
-    ctx |-β unit \in Unit
-| Tb_Seq : forall ctx t1 t2 T2,
-    ctx |-β t1 \in Unit ->
-    ctx |-β t2 \in T2 ->
-    ctx |-β (seq t1 t2) \in T2
+Lemma type_app_r : forall e Γ1 Γ2 typ,
+    Γ1 |- e \in typ ->
+    (Γ1 ++ Γ2) |- e \in typ.
+Proof.
+  intros. revert Γ2.
+  induction H; intros; econstructor; eauto.
+  revert H. revert n1.
+  induction ctx; simpl; intros.
+  destruct n1; try discriminate.
+  destruct n1; simpl in H; simpl; auto.
+Qed.
 
-where " ctx '|-β' x '\in' t " := (has_type_nonseq ctx x t).
+Lemma getbind_length_le : forall Γ1 Γ2 n ,
+    length Γ1 <= n ->
+    getbinding n (Γ1 ++ Γ2) = getbinding (n - length Γ1) Γ2.
+Proof.
+  induction Γ1; simpl; intros.
+  rewrite Nat.sub_0_r. reflexivity.
+  destruct n. inversion H.
+  apply le_S_n in H. apply IHΓ1. apply H.
+Qed.
 
-Lemma L9_3_8: forall t s x Ts T ctx,
-    ((x, Ts) :: ctx) |- t \in T ->
-    ctx |- s \in Ts ->
-    (ctx) |- subst 0 s t \in T.
+Lemma subst_type: forall t s x Ts T ctx ctx',
+    (ctx' ++ (x, Ts) :: ctx) |- t \in T ->
+    ctx' |- s \in Ts ->
+    (ctx' ++ ctx) |- subst (length ctx') s t \in T.
 Proof.
   induction t; intros; inversion H; subst; clear H; try solve [econstructor; eauto]; simpl.
   -
-    destruct n.
-    +
-      simpl in H3. inversion H3; subst. apply H0.
-    +
-      generalize (Nat.lt_0_succ n); intros. apply Nat.ltb_lt in H. rewrite H.
-      simpl. simpl in H3. apply T_Var. apply H3.
+    destruct eqb eqn:IH.
+    rewrite Nat.eqb_eq in IH; subst.
+    assert (H: getbinding (Datatypes.length ctx') (ctx' ++ (x, Ts) :: ctx) = Some Ts).
+    { clear. induction ctx'; eauto. }
+    rewrite H in H3. inversion H3; subst.
+    apply type_app_r. apply H0.
+    apply Nat.eqb_neq in IH.
+    destruct ltb eqn:IH0.
+    apply Nat.ltb_lt in IH0.
+    destruct n; try solve_by_invert.
+    simpl. constructor.
+    unfold lt in IH0. apply le_S_n in IH0.
+    rewrite getbind_length_le; auto.
+    rewrite getbind_length_le in H3; auto.
+    rewrite <- minus_Sn_m in H3; auto.
+    apply Nat.ltb_ge in IH0.
+    constructor.
+    apply length1_Some with ((x, Ts)::ctx); auto.
+    apply le_lt_or_eq in IH0. destruct IH0; auto.
+    symmetry in H. apply IH in H. inversion H.
   -
     apply T_Abs.
-Admitted.
-
+    assert (length ((name, typ) :: ctx') = S (length ctx')).
+    reflexivity.
+    rewrite <- H.
+    assert ((name, typ):: ctx' ++ ctx = ( (name, typ) :: ctx') ++ ctx). reflexivity.
+    rewrite H1.
+    apply IHt with (x:= x) (Ts:= Ts). apply H6.
+    rewrite <- (app_nil_l ( (name, typ)::ctx' ) ).
+    apply shifting. simpl. apply H0.
+Qed.
 
 Theorem T9_3_9 : forall t t' T ctx,
-    ctx |-β t \in T ->
+    ctx |- t \in T ->
     t -->i t' ->
-    ctx |-β t' \in T.
+    ctx |- t' \in T.
 Proof.
   intros. generalize dependent t'. induction H; intros; try solve_by_invert.
   -
     inversion H2; subst; auto.
-    apply IHhas_type_nonseq1 in H7. constructor; auto.
+    apply IHhas_type1 in H7. constructor; auto.
   -
     inversion H1; subst.
     +
-      apply IHhas_type_nonseq1 in H5. econstructor; eauto.
+      apply IHhas_type1 in H5. econstructor; eauto.
     +
-      apply IHhas_type_nonseq2 in H6. econstructor; eauto.
+      apply IHhas_type2 in H6. econstructor; eauto.
     +
       inversion H; subst.
+      rewrite <- (app_nil_l ctx).
+      eapply subst_type; eauto.
 Abort.
 
 End E11_1.
