@@ -688,6 +688,7 @@ Proof.
       apply IHhas_type2 in H6. econstructor; eauto.
     +
       inversion H; subst.
+      clear IHhas_type1. clear IHhas_type2.
       rewrite <- (app_nil_l ctx).
       eapply subst_type; eauto.
 Abort.

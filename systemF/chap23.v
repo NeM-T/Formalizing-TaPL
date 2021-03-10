@@ -34,7 +34,7 @@ Fixpoint shift_type d c ty :=
 Fixpoint subst_type (d: nat) (ty1 ty2: type) :=
   match ty1 with
   | tyvar n =>
-    if d =? n then shift_type 0 d ty2
+    if d =? n then shift_type d 0 ty2
     else if d <? n then tyvar (pred n) else (tyvar n)
   | arrow t1 t2 => arrow (subst_type d t1 ty2) (subst_type d t2 ty2)
   | Π t1 => Π (subst_type (S d) t1 ty2)
@@ -48,7 +48,8 @@ Fixpoint shift_ty_exp (d c: nat) (e: exp) :=
   | tapp e1 ty => tapp (shift_ty_exp d c e1) (shift_type d c ty)
   | Λ e1 => Λ (shift_ty_exp d (S c) e1)
   end.
-  
+
+Definition shift_list n m Γ := (map (shift_type n m) Γ).
 
 Fixpoint subst_ty_exp (d: nat) (ty: type) (e: exp) : exp :=
   match e with
@@ -72,7 +73,7 @@ end.
 
 Fixpoint subst_exp (d : nat) (s t: exp) : exp :=
 match t with
-| var x => if d =? x then shift_exp 0 d (shift_ty_exp 0 d s)
+| var x => if d =? x then shift_exp d 0 (shift_ty_exp d 0 s)
            else if d <? x then var (pred x)
                 else var x
 | abs ty e1 => abs ty (subst_exp (S d) s e1)
@@ -146,7 +147,7 @@ Fixpoint type_of (Γ: context) (e: exp) : option type :=
     | _, _ => None
     end
   | Λ e1 =>
-    match type_of (map (shift_type 1 0) Γ) e1 with
+    match type_of (shift_list 1 0 Γ) e1 with
     | Some ty => Some (Π ty)
     | None => None
     end
@@ -197,7 +198,7 @@ Inductive has_type : context -> exp -> type -> Prop :=
     Γ |- e2 \in ty1 ->
     Γ |- (app e1 e2) \in ty2
 | T_TAbs : forall e ty Γ,
-    (map (shift_type 1 0) Γ) |- e \in ty ->
+    (shift_list 1 0 Γ) |- e \in ty ->
     Γ |- Λ e \in Π ty
 | T_TApp : forall Γ e1 ty1 ty2,
     Γ |- e1 \in Π ty1 ->
@@ -374,7 +375,7 @@ Proof.
     rewrite IHe; reflexivity.
   -
     rewrite IHe; reflexivity.
-Qed.    
+Qed.
 
 Lemma appnth : forall (ctx ctx': context) n,
     nth_opt (ctx ++ ctx') (n + (length ctx)) = nth_opt ctx' n.
@@ -460,12 +461,372 @@ Proof.
   -
     constructor. apply IHhas_type; intros.
     apply shift_map_gamma.
-    apply H. rewrite map_length in H1. apply H1.
+    apply H. unfold shift_list in H1; rewrite map_length in H1. apply H1.
   -
     econstructor; eauto.
 Qed.
 
-Lemma sub_pre : forall e Γ ty n T,
+Lemma shift_type_range : forall ty c c1 d d1,
+    c <= c1 <= c + d ->
+    shift_type d1 c1 (shift_type d c ty) = shift_type (d1 + d) c ty.
+Proof.
+  induction ty; intros; eauto.
+  -
+    simpl. destruct H.
+    destruct (c <=? t0) eqn:IH1. apply leb_le in IH1.
+    assert (c1 <=? t0 + d = true).
+    apply leb_le.
+    apply le_trans with (c + d); auto.
+    apply plus_le_compat_r. apply IH1.
+    rewrite H1. rewrite (add_comm d1). rewrite add_assoc. reflexivity.
+    apply leb_gt in IH1.
+    assert (c1 <=? t0 = false).
+    apply leb_gt.
+    apply lt_le_trans with c; auto.
+    rewrite H1. reflexivity.
+  -
+    simpl. rewrite IHty1, IHty2; auto.
+  -
+    simpl. rewrite IHty; auto.
+    destruct H.
+    split; apply le_n_S; auto.
+Qed.
+
+Lemma shift_ty_exp_range : forall e c c1 d d1,
+    c <= c1 <= c + d ->
+    shift_ty_exp d1 c1 (shift_ty_exp d c e) = shift_ty_exp (d1 + d) c e.
+Proof.
+  induction e; simpl; intros; eauto.
+  -
+    rewrite IHe; auto.
+    rewrite shift_type_range; auto.
+  -
+    rewrite IHe1, IHe2; auto.
+  -
+    rewrite IHe; auto.
+    destruct H; split; apply le_n_S; auto.
+  -
+    rewrite IHe; auto.
+    rewrite shift_type_range; auto.
+Qed.    
+
+Lemma shift_type_le : forall ty c c1 d d1,
+    c1 <= c ->
+    shift_type d1 c1 (shift_type d c ty) = shift_type d (d1 + c) (shift_type d1 c1 ty).
+Proof.
+  induction ty; simpl; intros; eauto.
+  -
+    destruct (leb c t0) eqn:IH1.
+    apply leb_le in IH1.
+    assert (leb c1 t0 = true).
+    apply leb_le. apply le_trans with c; auto.
+    rewrite H0. apply leb_le in H0.
+    destruct (leb c1 (t0 + d)) eqn:IH2.
+    apply leb_le in IH2.
+    assert (leb (d1 + c) (t0 + d1) = true).
+    apply leb_le. rewrite add_comm. apply plus_le_compat_r; auto.
+    rewrite H1. rewrite <- add_assoc. rewrite (add_comm d d1). rewrite add_assoc. reflexivity.
+
+    apply leb_gt in IH2.
+    apply le_lt_trans with (n:= t0) in IH2; try apply le_add_r.
+    apply le_not_lt in H0. induction H0; auto.
+
+    apply leb_gt in IH1.
+    destruct leb eqn:IH2.
+
+    apply leb_le in IH2.
+    assert (d1 + c <=? t0 + d1 = false).
+    apply leb_gt. rewrite add_comm. apply plus_lt_compat_l. apply IH1.
+    rewrite H0. reflexivity.
+
+    apply leb_gt in IH2. apply lt_lt_add_l with (p:= d1) in IH1.
+    apply leb_gt in IH1. rewrite IH1. reflexivity.
+  -
+    rewrite IHty1, IHty2; auto.
+  -
+    rewrite IHty; auto.
+    rewrite add_succ_r. reflexivity.
+    apply le_n_S; apply H.
+Qed.
+
+Lemma shift_ty_exp_le : forall e c c1 d d1,
+    c1 <= c ->
+    shift_ty_exp d1 c1 (shift_ty_exp d c e) = shift_ty_exp d (d1 + c) (shift_ty_exp d1 c1 e).
+Proof.
+  induction e; simpl; intros; auto.
+  -
+    rewrite IHe; auto.
+    rewrite shift_type_le; auto.
+  -
+    rewrite IHe1, IHe2; auto.
+  -
+    rewrite IHe; auto.
+    rewrite add_succ_r. reflexivity.
+    apply le_n_S; apply H.
+  -
+    rewrite IHe; auto.
+    rewrite shift_type_le; auto.
+Qed.    
+
+Lemma shift_list_swap : forall Γ n m,
+    shift_list 1 0 (shift_list n m Γ)  = shift_list n (S m) (shift_list 1 0 Γ).
+Proof.
+  induction Γ; auto; intros.
+  simpl. rewrite IHΓ.
+  rewrite shift_type_le.
+  rewrite add_1_l. reflexivity.
+  apply Peano.le_0_n.
+Qed.
+
+Fixpoint subst_typen (d: nat) (ty1 ty2: type) :=
+  match ty1 with
+  | tyvar n =>
+    if d =? n then ty2
+    else if d <? n then tyvar (pred n) else (tyvar n)
+  | arrow t1 t2 => arrow (subst_typen d t1 ty2) (subst_typen d t2 ty2)
+  | Π t1 => Π (subst_typen (S d) t1 (shift_type 1 0 ty2))
+  end.
+
+Lemma subst_substn : forall ty1 ty2 n,
+    subst_type n ty1 ty2 = subst_typen n ty1 (shift_type n 0 ty2).
+Proof.
+  induction ty1; simpl; intros.
+  -
+    reflexivity.
+  -
+    rewrite IHty1_1, IHty1_2; auto.
+  -
+    rewrite IHty1; auto.
+    rewrite shift_type_range; auto.
+    rewrite add_0_l; split; auto.
+    apply le_0_n.
+Qed.
+
+Lemma shift_sub_cn : forall ty n c d ty1,
+    c <= n ->
+    shift_type d c (subst_type n ty ty1) =
+       subst_type (n + d) (shift_type d c ty) ty1.
+Proof.
+  induction ty; simpl; intros; auto.
+  -
+    destruct eqb eqn:IH.
+    +
+      apply eqb_eq in IH; subst.
+      apply leb_le in H. rewrite H.
+      rewrite eqb_refl. rewrite shift_type_range; repeat split; auto.
+      rewrite add_comm. reflexivity.
+      apply le_0_n. rewrite add_0_l.
+      apply leb_le; auto.
+    +
+      assert (n + d =? t0 + d = false ).
+      {
+        apply eqb_neq; intro.
+        rewrite add_comm in H0.
+        rewrite (add_comm t0) in H0.
+        apply plus_reg_l in H0. subst.
+        rewrite eqb_refl in IH. inversion IH.
+      }
+      destruct ltb eqn:IH1.
+      ++
+        apply ltb_lt in IH1.
+        assert (c <=? t0 = true).
+        { apply leb_le, lt_le_incl.
+        apply le_lt_trans with n; auto. }
+        rewrite H1.
+        rewrite H0.
+        destruct t0. inversion IH1.
+        apply le_lt_trans with (p:= S t0) in H; auto.
+        compute in H. apply le_S_n in H.
+        apply plus_lt_compat_r with (p:=d) in IH1.
+        apply ltb_lt in IH1. rewrite IH1. simpl. 
+        apply leb_le in H. rewrite H. reflexivity.
+      ++
+        destruct leb eqn:IH2.
+        +++
+          rewrite H0.
+          apply ltb_ge in IH1. apply plus_le_compat_r with (p:=d) in IH1.
+          apply ltb_ge in IH1. rewrite IH1.
+          simpl. rewrite IH2. reflexivity.
+        +++
+          simpl. rewrite IH2.
+          apply ltb_ge in IH1. apply leb_gt in IH2.
+          assert (n + d <? t0 = false).
+          {
+            apply ltb_ge. apply le_plus_trans; auto.
+          }
+          rewrite H1.
+          assert (n + d =? t0 = false).
+          {
+            apply eqb_neq; intro.
+            symmetry in H2; subst.
+            destruct d.
+            rewrite add_0_r in IH2.
+            apply leb_gt in IH2. apply leb_nle in IH2.
+            apply IH2; auto.
+            apply le_add_le_sub_l in IH1.
+            rewrite sub_diag in IH1.
+            inversion IH1.
+          }
+          rewrite H2. reflexivity.
+  -
+    rewrite IHty1, IHty2; auto.
+  -
+    rewrite IHty; auto.
+    apply le_n_S; auto.
+Qed.
+
+Lemma shift_sub_nc : forall ty n c d ty1,
+    n <= c ->
+    shift_type d c (subst_type n ty ty1) =
+       subst_type n (shift_type d (S c) ty) (shift_type d (c - n) ty1).
+Proof.
+  induction ty; simpl; intros; auto.
+  -
+    destruct eqb eqn:IH.
+    +
+      apply eqb_eq in IH; subst.
+      destruct t0; simpl.
+      repeat rewrite shift_ty0. rewrite sub_0_r. reflexivity.
+      assert (leb c t0 = false). apply leb_gt.
+      apply lt_le_trans with (S t0); auto.
+      rewrite H0. rewrite eqb_refl.
+      rewrite (shift_type_le ty1 (c - S t0) 0 ); auto.
+      assert (S t0 + (c - S t0) = c).
+      { rewrite le_plus_minus_r. reflexivity. apply H. }
+      rewrite H1. reflexivity.
+      apply le_0_n.
+    +
+      destruct ltb eqn:IH0.
+      ++
+        apply ltb_lt in IH0.
+        destruct t0. inversion IH0. simpl.
+        destruct leb eqn:IH1; simpl.
+        +++
+          apply leb_le in IH1.
+          apply lt_lt_add_r with (p:= d) in IH0.
+          rewrite add_succ_l in IH0.
+          apply ltb_lt in IH0. rewrite IH0.
+          destruct (eqb n (S (t0 + d))) eqn:IH2.
+          apply eqb_eq in IH2; subst.
+          rewrite ltb_irrefl in IH0. discriminate IH0.
+          reflexivity.
+        +++
+          apply leb_gt in IH1.
+          destruct eqb eqn:IH2.
+          apply eqb_eq in IH2; subst.
+          induction (lt_irrefl (S t0)); auto.
+          apply ltb_lt in IH0; rewrite IH0.
+          reflexivity.
+      ++
+        apply ltb_ge in IH0.
+        destruct t0; simpl. rewrite IH.
+        destruct leb eqn:IH1; auto.
+        apply leb_le in IH1. inversion IH1; subst.
+        inversion H; subst. simpl in IH; discriminate IH.
+
+        destruct leb eqn:IH1.
+        +++
+          apply leb_le in IH1.
+          apply le_trans with (p:= S t0) in H; auto.
+          apply le_lt_or_eq in IH0.
+          destruct IH0; subst.
+          apply le_not_lt in H. induction H; auto.
+          rewrite eqb_refl in IH. discriminate IH.
+        +++
+          apply leb_gt in IH1.
+          apply lt_lt_succ_r in IH1.
+          apply lt_S_n in IH1.
+          apply leb_gt in IH1.
+          rewrite IH1. rewrite IH.
+          apply ltb_ge in IH0.
+          rewrite IH0. reflexivity.
+  -
+    rewrite IHty1, IHty2; auto.
+  -
+    rewrite IHty; auto.
+    apply le_n_S; auto.
+Qed.
+
+Lemma shift_type_pre : forall e Γ ty n m,
+    Γ |- e \in ty ->
+    (shift_list n m Γ) |- (shift_ty_exp n m e) \in (shift_type n m ty).
+Proof.
+  intros. revert n; revert m.
+  induction H; simpl; intros; try econstructor; eauto.
+  -
+    generalize dependent Γ.
+    induction n; simpl; intros.
+    destruct Γ; try discriminate; auto.
+    simpl. simpl in H. inversion H; subst. reflexivity.
+    destruct Γ; try discriminate.
+    simpl. simpl in H. apply IHn. apply H.
+  -
+    rewrite shift_list_swap.
+    apply IHhas_type.
+  -
+    rewrite shift_sub_nc.
+    rewrite sub_0_r.
+    econstructor. simpl in IHhas_type. apply IHhas_type.
+    apply le_0_n.
+Qed.
+
+Lemma sub_shift_type : forall ty1 n (c: nat) d c ty2,
+    c <= n -> S n <= d + c ->
+    subst_type n (shift_type d c ty1) ty2
+               = shift_type (pred d) c ty1.
+Proof.
+  induction ty1; simpl; intros.
+  -
+    destruct leb eqn:IH1.
+    +
+      apply leb_le in IH1.
+      destruct d.
+
+      rewrite add_0_l in H0.
+      apply le_lt_n_Sm in H. apply lt_le_trans with (p:= c0) in H; auto.
+      apply lt_irrefl in H. inversion H.
+
+      rewrite add_succ_r. simpl.
+      assert (n =? S (t0 + d) = false).
+      {
+        apply eqb_neq; intro. subst.
+        apply plus_le_compat_l with (p:= S d) in IH1.
+        apply le_trans with (p:= S d + t0) in H0; auto.
+        rewrite add_comm in H0.
+        apply nle_succ_diag_l in H0. apply H0.
+      }
+      rewrite H1.
+      assert (n <? S (t0 + d) = true).
+      {
+        apply ltb_lt. rewrite add_succ_l in H0. apply le_S_n in H0.
+        apply plus_le_compat_r with (p:= d) in IH1.
+        apply le_lt_n_Sm.
+        apply le_trans with (d + c0); auto.
+        rewrite add_comm; apply IH1.
+      }
+      rewrite H2. reflexivity.
+    +
+      assert (n =? t0 = false).
+      {
+        apply eqb_neq; intro; subst.
+        apply leb_nle in IH1. apply IH1.
+        apply H.
+      }
+      rewrite H1.
+      apply leb_gt in IH1.
+      apply lt_le_trans with (p:= n) in IH1; auto.
+      apply lt_le_incl in IH1.
+      apply ltb_ge in IH1. rewrite IH1.
+      reflexivity.
+  -
+    rewrite IHty1_1, IHty1_2; auto.
+  -
+    rewrite IHty1; auto.
+    apply le_n_S. apply H.
+    rewrite add_succ_r. apply le_n_S. apply H0.
+Qed.
+
+Lemma sub_type_pre : forall e Γ ty n T,
     Γ |- e \in ty ->
     (map (fun t' => subst_type n t' T) Γ) |- (subst_ty_exp n T e) \in subst_type n ty T.
 Proof.
@@ -487,9 +848,16 @@ Proof.
     econstructor; eauto.
   -
     constructor.
-    admit.
+    assert (shift_list 1 0 (map (fun t' => subst_type n t' T) Γ) = map (fun t' => subst_type (S n) t' T) (shift_list 1 0 Γ)).
+    {
+      clear. revert n. revert T.
+      induction Γ; simpl; intros; auto.
+      rewrite IHΓ.
+      rewrite shift_sub_cn. rewrite add_1_r. reflexivity.
+      apply le_0_n.
+    }
+    rewrite H0. apply IHhas_type.
   -
-    (* apply (T_TApp (map (fun t' => subst_type n t' T) Γ) ([[n |--> T]]e1) (subst_type n ty2 T) ). *)
     admit.
 Abort.
 
@@ -510,10 +878,53 @@ Proof.
     admit.
   -
     econstructor; eauto.
-    rewrite map_app in H2.
-    rewrite map_app.
-    admit.
+    unfold shift_list in H2; rewrite map_app in H2.
+    unfold shift_list.
+    repeat rewrite map_app.
+    rewrite <- map_length with (l:= g1) (f:= shift_type 1 0).
+    rewrite <- map_length with (l:= g2) (f:= shift_type 1 0).
+    apply IHe. apply H2.
 Abort.
+
+Lemma subst_exp_pre : forall e s Ts T ctx ctx',
+    (ctx' ++ Ts :: ctx) |- e \in T ->
+    ctx |- s \in Ts ->
+    (ctx' ++ ctx) |- subst_exp (length ctx') s e \in T.
+Proof.
+  induction e; simpl; intros.
+  -
+    inversion H; subst.
+    destruct eqb eqn:IH1.
+    apply eqb_eq in IH1; subst.
+    admit.
+    destruct ltb eqn:IH2.
+    destruct n; try discriminate; simpl.
+    constructor.
+    apply ltb_lt in IH2.
+    admit.
+    constructor.
+    admit.
+  -
+    inversion H; subst.
+    constructor; eauto.
+    assert (S (length ctx') = (length (t0:: ctx'))). reflexivity.
+    rewrite H1.
+    apply IHe with (Ts:= Ts) (ctx':= t0::ctx'); auto.
+  -
+    inversion H; subst.
+    econstructor; eauto.
+  -
+    inversion H; subst.
+    constructor.
+    unfold shift_list in H3.
+    repeat rewrite map_app in H3.
+    unfold shift_list. repeat rewrite map_app.
+    simpl in H3.
+    admit.
+  -
+    inversion H; subst.
+    econstructor; eauto.
+Admitted.
 
 Theorem T23_5_1 : forall e Γ ty e',
     Γ |- e \in ty -> e --> e' ->
@@ -523,9 +934,12 @@ Proof.
   induction H; intros; try solve_by_invert.
   - (*case: e = app*)
     inversion H1; subst; try econstructor; eauto.
-    admit.
+    inversion H; subst.
+    rewrite <- (app_nil_l Γ).
+    apply subst_exp_pre with ty1; auto.
   -
     inversion H0; subst; try econstructor; eauto.
     inversion H; subst.
+    clear IHhas_type.
     admit.
 Abort.
